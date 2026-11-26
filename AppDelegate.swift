@@ -288,16 +288,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         NSApp.terminate(nil)
     }
 
+    private static func makeMenuBarTemplateIcon() -> NSImage {
+        let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.setStroke()
+            NSColor.black.setFill()
+
+            // Mini Notch pill with karaoke bar inside
+            let notchPath = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 9.0, width: 15.0, height: 7.2), xRadius: 2.8, yRadius: 2.8)
+            notchPath.lineWidth = 1.4
+            notchPath.stroke()
+
+            let lyricSweep = NSBezierPath(roundedRect: NSRect(x: 4.0, y: 11.7, width: 8.2, height: 1.8), xRadius: 0.9, yRadius: 0.9)
+            lyricSweep.fill()
+
+            // Mini 5-bar waveform matching NotchLyrics logo
+            let heights: [CGFloat] = [2.6, 4.4, 5.8, 4.4, 2.6]
+            for (idx, h) in heights.enumerated() {
+                let x = 3.2 + CGFloat(idx) * 2.55
+                let bar = NSBezierPath(roundedRect: NSRect(x: x, y: 1.8, width: 1.4, height: h), xRadius: 0.7, yRadius: 0.7)
+                bar.fill()
+            }
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }
+
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            if let img = NSImage(systemSymbolName: "music.note.list", accessibilityDescription: "TouchBarLyrics") {
-                img.isTemplate = true
-                button.image = img
-            } else {
-                button.title = "Lyrics"
-            }
-            button.toolTip = "TouchBarLyrics"
+            button.image = Self.makeMenuBarTemplateIcon()
+            button.image?.accessibilityDescription = "NotchLyrics"
+            button.toolTip = "NotchLyrics"
         }
         mainMenu.delegate = self
         statusItem.menu = mainMenu

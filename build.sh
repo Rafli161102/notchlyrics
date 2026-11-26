@@ -40,6 +40,9 @@ mkdir -p "$MACOS_DIR" "$CONTENTS/Resources"
 
 # Plist source kept in repo; versions are injected below.
 cp "$ROOT/Info.plist" "$CONTENTS/Info.plist"
+if [[ -f "$ROOT/assets/AppIcon.icns" ]]; then
+  cp "$ROOT/assets/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
+fi
 
 FRAMEWORKS=(
   -framework Cocoa
@@ -116,6 +119,7 @@ if [[ "$DO_INSTALL" -eq 1 ]]; then
       "$INSTALL_APP"
   fi
   codesign --verify --deep --strict "$INSTALL_APP"
+  touch "$INSTALL_APP"
   print "==> Installed: $INSTALL_APP"
   print "    restart: launchctl kickstart -k gui/\$(id -u)/com.user.touchbarlyrics"
 fi

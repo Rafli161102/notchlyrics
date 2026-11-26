@@ -91,6 +91,7 @@ function createWindow() {
   const bounds = computeBounds(false);
   mainWindow = new BrowserWindow({
     ...bounds,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -243,7 +244,9 @@ function tickFrame() {
 }
 
 function buildTray() {
-  tray = new Tray(nativeImage.createEmpty());
+  const trayPath = path.join(__dirname, 'assets', 'tray.png');
+  const trayIcon = fs.existsSync(trayPath) ? nativeImage.createFromPath(trayPath) : nativeImage.createEmpty();
+  tray = new Tray(trayIcon);
   tray.setToolTip('NotchLyrics');
   const rebuildMenu = () => {
     const langItems = LANGUAGES.map((l) => ({
@@ -300,8 +303,10 @@ function buildTray() {
 }
 
 async function showAboutDialog() {
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
   const res = await dialog.showMessageBox({
     type: 'info',
+    icon: fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined,
     title: 'NotchLyrics',
     message: `NotchLyrics for Windows v${app.getVersion()}`,
     detail: t(appLanguage, 'aboutDetail'),

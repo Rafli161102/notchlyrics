@@ -68,7 +68,7 @@ jobs:
             if (!hasX64 || !hasArm64) {
               throw new Error('Expected both x64 and ARM64 app.asar, found: ' + asars.join(', '));
             }
-            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'i18n.js', 'win_smtc.ps1', 'renderer'];
+            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'i18n.js', 'win_smtc.ps1', 'assets', 'renderer'];
             for (const asarPath of asars) {
               const buf = fs.readFileSync(asarPath);
               const jsonLen = buf.readUInt32LE(12);
