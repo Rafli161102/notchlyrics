@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var trayItem: NSCustomTouchBarItem!
     private var lyricsTouchBar: NSTouchBar!
     private var lyricsView: TouchBarLyricsView!
+    private var notchWindowController: NotchLyricsWindowController?
     private var themeWindowController: ThemeEditorWindowController?
 
     private var adapterProcess: Process?
@@ -121,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private let keyRomanizeLyrics = "romanizeLyrics"
     private let keyArtworkColors = "artworkColorsEnabled"
     private let keyCharacterAnimation = "characterAnimationEnabled"
+    private let keyDisplayMode = "displayMode"
 
     private var autoShowEnabled: Bool {
         get { defaults.object(forKey: keyAutoShow) == nil ? true : defaults.bool(forKey: keyAutoShow) }
@@ -152,6 +154,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         set { defaults.set(newValue, forKey: keyCharacterAnimation) }
     }
 
+    private var displayMode: DisplayMode {
+        get {
+            guard let raw = defaults.string(forKey: keyDisplayMode),
+                  let mode = DisplayMode(rawValue: raw) else { return .defaultMode }
+            return mode
+        }
+        set { defaults.set(newValue.rawValue, forKey: keyDisplayMode) }
+    }
+
     private let adapterScript = "/Applications/Atoll.app/Contents/Resources/mediaremote-adapter.pl"
     private let adapterFramework = "/Applications/Atoll.app/Contents/Resources/MediaRemoteAdapter.framework"
 
@@ -171,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
 
         ThemeStore.shared.onThemeChanged = { [weak self] theme in
             self?.lyricsView.applyTheme(theme)
+            self?.notchWindowController?.applyTheme(theme)
             self?.refreshDisplay()
         }
 
@@ -256,6 +268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         lyricsTouchBar = NSTouchBar()
         lyricsTouchBar.delegate = self
         lyricsTouchBar.defaultItemIdentifiers = [lyricsItemID]
+
+        setupNotch()
     }
 
     func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
@@ -263,6 +277,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let item = NSCustomTouchBarItem(identifier: identifier)
         item.view = lyricsView
         return item
+    }
+
+    private func setupNotch() {
+        let controller = NotchLyricsWindowController { [weak self] in
+            self?.sendPlayPauseCommand()
+        }
+        controller.setCharacterAnimationEnabled(characterAnimationEnabled)
+        notchWindowController = controller
+        applyDisplayMode()
     }
 
     @objc private func toggleTouchBarModal() {
@@ -274,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     }
 
     @objc private func presentModal() {
+        guard displayMode.showsTouchBar else { return }
         DFRBridge.presentSystemModalTouchBar(lyricsTouchBar, trayID: trayID)
         isModalPresented = true
         if currentState.playing {
@@ -288,6 +312,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         if currentState.playing {
             startRenderTimer()
         }
+    }
+
+    private func applyDisplayMode() {
+        notchWindowController?.setVisible(displayMode.showsNotch)
+        if !displayMode.showsTouchBar {
+            dismissModal()
+        }
+        if currentState.playing {
+            startRenderTimer()
+        }
+        refreshDisplay()
+    }
+
+    @objc private func selectDisplayMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = DisplayMode(rawValue: raw) else { return }
+        displayMode = mode
+        applyDisplayMode()
     }
 
     // MARK: - MediaRemote Stream
@@ -515,6 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         guard artworkPalette != nil else { return }
         artworkPalette = nil
         lyricsView.applyArtworkPalette(nil)
+        notchWindowController?.applyArtworkPalette(nil)
     }
 
     private func updateArtworkPaletteIfNeeded(from state: NowPlayingState, force: Bool) {
@@ -542,6 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
                       self.artworkColorsEnabled else { return }
                 self.artworkPalette = palette
                 self.lyricsView.applyArtworkPalette(palette)
+                self.notchWindowController?.applyArtworkPalette(palette)
             }
         }
     }
@@ -560,7 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var renderTimerInterval: TimeInterval = 0
 
     private func startRenderTimer() {
-        let desiredInterval: TimeInterval = isModalPresented ? 0.03 : 0.12
+        let desiredInterval: TimeInterval = (isModalPresented || displayMode.showsNotch) ? 0.03 : 0.12
         if renderTimer != nil && abs(renderTimerInterval - desiredInterval) < 0.005 {
             return
         }
@@ -644,6 +688,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             ? CGFloat(vocalSync.currentNormalizedBackingEnergy())
             : liveVocalEnergy
 
+        let songPalette = artworkColorsEnabled ? artworkPalette : nil
+
         lyricsView.update(
             trackTitle: fetcher.cleanTitle(currentState.title),
             mainText: mainText,
@@ -655,8 +701,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             backingVocalEnergy: liveBackingEnergy,
             isPlaying: currentState.playing,
             isVocalSynced: autoVocalSyncEnabled && vocalSync.isTapActive,
-            songPalette: artworkColorsEnabled ? artworkPalette : nil
+            songPalette: songPalette
         )
+
+        if displayMode.showsNotch {
+            notchWindowController?.update(
+                trackTitle: fetcher.cleanTitle(currentState.title),
+                mainText: mainText,
+                backingText: backingText,
+                songProgress: songProg,
+                lineProgress: lineProg,
+                backingLineProgress: backProg,
+                vocalEnergy: liveVocalEnergy,
+                backingVocalEnergy: liveBackingEnergy,
+                isPlaying: currentState.playing,
+                isVocalSynced: autoVocalSyncEnabled && vocalSync.isTapActive,
+                songPalette: songPalette
+            )
+        }
     }
 
     // MARK: - Menu Bar
@@ -687,6 +749,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let showItem = NSMenuItem(title: showTitle, action: #selector(toggleTouchBarModal), keyEquivalent: "t")
         showItem.target = self
         mainMenu.addItem(showItem)
+
+        let displayMenu = NSMenu()
+        for mode in DisplayMode.allCases {
+            let item = NSMenuItem(title: mode.displayName, action: #selector(selectDisplayMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = displayMode == mode ? .on : .off
+            displayMenu.addItem(item)
+        }
+        let displayParent = NSMenuItem(title: "Tampilkan Lirik di: \(displayMode.displayName)", action: nil, keyEquivalent: "")
+        displayParent.submenu = displayMenu
+        mainMenu.addItem(displayParent)
 
         let autoItem = NSMenuItem(title: "Otomatis Muncul Saat Memutar", action: #selector(toggleAutoShow), keyEquivalent: "a")
         autoItem.target = self
@@ -786,6 +860,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     @objc private func toggleCharacterAnimation() {
         characterAnimationEnabled.toggle()
         lyricsView.characterAnimationEnabled = characterAnimationEnabled
+        notchWindowController?.setCharacterAnimationEnabled(characterAnimationEnabled)
         if currentState.playing {
             startRenderTimer()
         }

@@ -1,10 +1,10 @@
 # TouchBarLyrics
 
-Lirik lagu tersinkronisasi untuk **macOS Touch Bar**, terutama audio yang dimainkan dari **Safari**. Aplikasi membaca Now Playing lewat `mediaremote-adapter`, mengambil lirik sinkronisasi dari sumber online, memisahkan vokal utama dan *backing vocal*, menyediakan romanisasi, serta menyinkronkan waktu lirik dengan energi vokal audio sistem.
+Lirik lagu tersinkronisasi untuk **macOS Touch Bar** atau **top-center Notch overlay**, terutama audio yang dimainkan dari **Safari**. Aplikasi membaca Now Playing lewat `mediaremote-adapter`, mengambil lirik sinkronisasi dari sumber online, memisahkan vokal utama dan *backing vocal*, menyediakan romanisasi, serta menyinkronkan waktu lirik dengan energi vokal audio sistem.
 
 ## Persyaratan
 
-- macOS **14.2+** dengan Touch Bar (`DFRFoundation`).
+- macOS **14.2+**. Touch Bar memakai `DFRFoundation`; mode Notch memakai `NSPanel` dan juga bisa dipakai pada Mac tanpa physical notch.
 - **Xcode Command Line Tools**: `xcode-select --install`.
 - **Atoll** terpasang di `/Applications/Atoll.app`, dengan:
   - `Contents/Resources/mediaremote-adapter.pl`
@@ -91,6 +91,7 @@ NOTARY_PROFILE=TouchBarLyricsNotary ./notarize.sh
 
 ## Fitur utama
 
+- Mode tampilan **Touch Bar / Notch / Both / Hidden**; default tetap Touch Bar. Notch top-center transparent `NSPanel`, semua Spaces, no focus stealing, synthetic notch di Mac tanpa physical notch.
 - Karaoke per huruf/per kata, main + backing vocal.
 - LRC/YRC + enhanced LRC + estimasi.
 - Romanisasi Jepang, Korea, China, dan script non-Latin lainnya.
@@ -100,12 +101,11 @@ NOTARY_PROFILE=TouchBarLyricsNotary ./notarize.sh
 
 ## Test / verifikasi
 
-Saat ini belum ada XCTest/CI. Verifikasi dasar:
-
 ```sh
-swiftc -swift-version 5 ...   # lihat perintah nyata di build.sh
+./tests/run.sh                # unit test notch geometry + display-mode routing
+./build.sh                    # build + signing verification
 codesign --verify --deep --strict .build/TouchBarLyrics.app
 plutil -lint .build/TouchBarLyrics.app/Contents/Info.plist
 ```
 
-Disarankan menambah XCTest untuk parser, romanizer, timing, palette, fetch ranking, dan regression vocal sync. Lihat `CHANGELOG.md`.
+Belum ada XCTest/CI penuh untuk parser, romanizer, timing, palette, fetch ranking, dan regression vocal sync; test notch saat ini memakai harness Swift standalone. Lihat `CHANGELOG.md`.

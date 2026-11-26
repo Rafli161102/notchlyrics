@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versi
 
 ### Added
 - `README.md`, `CHANGELOG.md`, `.gitignore`.
+- **Notch output:** `NotchLyricsWindowController`, top-center transparent `NSPanel`, `DisplayMode` Touch Bar / Notch / Both / Hidden, physical-notch-aware top inset, secondary display support, same lyrics/theme/artwork pipeline, reduced-motion handling.
+- `tests/run.sh` + `tests/NotchTests.swift` standalone tests for display-mode routing and top-center geometry.
 - `build.sh` reproducible local build, source `Info.plist`, `VERSION`, `BUILD_NUMBER`, signing hook.
 - `notarize.sh` untuk Developer ID + notarytool + stapler.
 
@@ -15,6 +17,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versi
 ### Notes
 - Lisensi belum dipilih; jangan publish source sebelum memilih lisensi.
 - Notarization memerlukan kredensial Apple; tidak disimpan di repo.
+- Mode Notch belum di-screenshot/di-verifikasi pada Touch Bar fisik + physical-notch hardware.
 
 ## [2.1] - 2026-11-26
 
