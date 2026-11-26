@@ -42,7 +42,8 @@ Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure O
 .
 ├── AppDelegate.swift                # macOS menu bar app, Now Playing bridge & render loop
 ├── DisplayMode.swift                # Touch Bar / Notch / Both / Hidden routing
-├── LyricsParserAndFetcher.swift     # LRCLIB + NetEase YRC + iTunes repair + disk cache
+├── Localization.swift               # Multi-language UI (English default + 5 languages)
+├── LyricsParserAndFetcher.swift     # LRCLIB + NetEase + Kugou + Kuwo + iTunes/Deezer + cache
 ├── NotchGeometry.swift              # Golden Ratio (phi) bezel/floating/strip notch geometry
 ├── NotchLyricsWindowController.swift# Hover-expanding NSPanel notch overlay + timer UI
 ├── TextRomanizerAndArtwork.swift    # Multi-script romanizer & album color palette extractor
@@ -53,10 +54,21 @@ Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure O
 ├── build.sh                         # macOS reproducible compiler (--install, --universal, --package)
 ├── notarize.sh                      # Apple Developer ID notarization & stapling helper
 ├── Info.plist                       # App metadata & privacy usage descriptions
+├── .github/workflows/               # Cross-platform CI build & tagged release automation
 ├── tests/                           # Standalone macOS Swift test suites
 ├── windows/                         # Windows 10/11 Electron app, WinRT SMTC & MV3 extension
 └── web/                             # Reusable standalone browser notch UI
 ```
+
+---
+
+## Prebuilt Releases (macOS & Windows)
+
+Ready-to-use binaries are published on the [**GitHub Releases**](https://github.com/Rafli161102/notchlyrics/releases) page (built automatically by [.github/workflows/release.yml](.github/workflows/release.yml) on every `v*` tag):
+
+- **macOS (`14.2+` Universal `arm64` + `x86_64`):** `TouchBarLyrics-2.3.0-macOS.zip`
+- **Windows (`10 / 11` Installer `x64` + `ARM64`):** `NotchLyrics Setup 2.3.0.exe`
+- **Windows Portable:** `NotchLyrics-2.3.0-x64-portable.exe` (`x64`), `NotchLyrics-2.3.0-arm64-portable.exe` (`ARM64`), and `NotchLyrics-2.3.0-portable.exe` (dual-arch)
 
 ---
 
@@ -103,10 +115,15 @@ npm test
 npm start
 ```
 
-Package Windows installer (`NotchLyrics Setup.exe` & portable `.exe` in `windows/dist/`):
+Package Windows installers & portable executables (`x64` and `ARM64`) inside `windows/dist/`:
 ```powershell
 npm run dist:win
 ```
+This outputs:
+- `NotchLyrics Setup 2.3.0.exe` (dual-arch NSIS installer for `x64` + `ARM64`)
+- `NotchLyrics-2.3.0-x64-portable.exe` (`x64` portable)
+- `NotchLyrics-2.3.0-arm64-portable.exe` (`ARM64` portable)
+- `NotchLyrics-2.3.0-portable.exe` (dual-arch portable)
 
 #### Option 2: Zero-Build Chrome / Edge / Brave Extension (`windows/browser-extension/`)
 1. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`).

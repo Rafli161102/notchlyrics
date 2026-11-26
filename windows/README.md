@@ -16,12 +16,15 @@ npm test
 npm start
 ```
 
-### Build Windows Installer (`.exe`)
+### Build Windows Installer & Portable `.exe` (`x64` + `ARM64`)
 ```powershell
 cd windows
+npm install
 npm run dist:win
 ```
-Produces NSIS installer and portable executable inside `windows/dist/`.
+Produces dual-arch NSIS installer (`NotchLyrics Setup 2.3.0.exe`), architecture-specific portables (`NotchLyrics-2.3.0-x64-portable.exe`, `NotchLyrics-2.3.0-arm64-portable.exe`), and dual-arch portable inside `windows/dist/`.
+
+Also supports live System Tray language switching (`English` default, `Bahasa Indonesia`, `日本語`, `한국어`, `简体中文`, and `Español`).
 
 ---
 
