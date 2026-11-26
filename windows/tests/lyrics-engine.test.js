@@ -73,6 +73,20 @@ const unrelated = scoreCandidate({
 check(orig > spedUp + 40, 'original track dominates Sped Up remix');
 check(unrelated < 65, 'zero title overlap rejected below 65');
 
+const jpNativeLines = Array.from({ length: 6 }, (_, i) => ({ time: i * 18, mainText: '夜に駆ける夢を見てる' }));
+const jpEngLines = Array.from({ length: 6 }, (_, i) => ({ time: i * 18, mainText: 'Into the night we run with you and see the sky' }));
+const jpScore = scoreCandidate({
+  trackName: '夜に駆ける', artistName: 'YOASOBI', rawInputTitle: '夜に駆ける',
+  expectedTitle: '夜に駆ける', expectedArtist: 'YOASOBI',
+  refDuration: 260, targetDuration: 260, hasSynced: true, hasWordTimings: false, parsedLines: jpNativeLines
+});
+const engTransScore = scoreCandidate({
+  trackName: '夜に駆ける', artistName: 'YOASOBI', rawInputTitle: '夜に駆ける',
+  expectedTitle: '夜に駆ける', expectedArtist: 'YOASOBI',
+  refDuration: 260, targetDuration: 260, hasSynced: true, hasWordTimings: false, parsedLines: jpEngLines
+});
+check(jpScore > 140 && engTransScore < 65, 'Japanese song prioritizes native Kana lyrics and rejects English translations');
+
 const yrc = parseYRC('[1000,1500](1000,500,0)Hello (1500,1000,0)world');
 check(yrc.length === 1 && yrc[0].words.length === 2, 'parseYRC decodes word-level timestamps');
 

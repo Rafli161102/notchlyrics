@@ -804,14 +804,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private func refreshDisplay() {
         let activeTheme = ThemeStore.shared.activeTheme
         let rawElapsed = currentState.currentElapsed()
-        // Real-time ~110ms display lookahead cancels MediaRemote + CoreAudio + LCD Touch Bar frame latency
-        let displayLead: TimeInterval = currentState.playing ? 0.11 : 0.0
+        // Subtle 25ms VSync compensation avoids early line jumps while preserving instant response
+        let displayLead: TimeInterval = currentState.playing ? 0.025 : 0.0
         let elapsed = rawElapsed + autoVocalOffset + activeTheme.karaokeOffsetSeconds + displayLead
-        // When line-level LRC lacks millisecond word timings, adapt speed dynamically to track BPM + live vocal phrasing
-        let liveBPMFactor = (!hasExactWordTimings && autoVocalSyncEnabled && vocalSync.isTapActive)
-            ? vocalSync.realtimeDeliveryTempoScale()
-            : 1.0
-        let wordScale = Double(activeTheme.wordSpeedScale) * liveBPMFactor
+        // Keep karaoke pace steady using track line/word intervals + user speed multiplier (avoids BPM jitter)
+        let wordScale = Double(activeTheme.wordSpeedScale)
         let songProg: CGFloat = currentState.duration > 0
             ? CGFloat(min(max(0, rawElapsed / currentState.duration), 1))
             : 0

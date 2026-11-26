@@ -646,6 +646,18 @@ final class LyricsParserAndFetcher {
             completion: { coordGroup.leave() }
         )
 
+        coordGroup.enter()
+        fetchKugouCandidates(
+            token: token,
+            candidates: candidates,
+            rawTitle: rawTitle,
+            expectedTitle: titleHint,
+            expectedArtist: artistHint,
+            targetDuration: duration,
+            onBatch: { batch in ingest(batch) },
+            completion: { coordGroup.leave() }
+        )
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Smart responsive wait: emit in <= 0.45s after first confident synced hit instead of blocking 3.8s
             let hardDeadline = Date().addingTimeInterval(2.5)
@@ -810,6 +822,61 @@ final class LyricsParserAndFetcher {
         return 0.0
     }
 
+    private static func scriptConsistencyScore(
+        lines: [LyricLine],
+        trackName: String,
+        artistName: String,
+        rawInputTitle: String,
+        expectedTitle: String,
+        expectedArtist: String
+    ) -> Double {
+        let metaText = "\(rawInputTitle) \(expectedTitle) \(expectedArtist) \(trackName) \(artistName)"
+        let expectsJapanese = TextRomanizer.containsJapaneseKana(metaText)
+        let expectsKorean = TextRomanizer.containsHangul(metaText)
+        let expectsCyrillic = TextRomanizer.containsCyrillic(metaText)
+        let expectsArabic = TextRomanizer.isRTLScript(metaText)
+        let expectsCJK = metaText.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+
+        let sample = lines.prefix(16).map { $0.mainText }.joined(separator: " ")
+        guard !sample.isEmpty else { return 0.0 }
+
+        let hasJP = TextRomanizer.containsJapaneseKana(sample)
+        let hasKO = TextRomanizer.containsHangul(sample)
+        let hasRU = TextRomanizer.containsCyrillic(sample)
+        let hasAR = TextRomanizer.isRTLScript(sample)
+        let sampleCJKCount = sample.unicodeScalars.filter { (0x4E00...0x9FFF).contains($0.value) }.count
+        let nonLatinRatio = Double(sample.unicodeScalars.filter { $0.value > 0x024F && $0.properties.isAlphabetic }.count)
+            / Double(max(1, sample.unicodeScalars.filter { $0.properties.isAlphabetic }.count))
+
+        let lowerSample = " " + sample.lowercased() + " "
+        let englishMarkers = [" the ", " and ", " you ", " my ", " your ", " into ", " night ", " love ", " with ", " that "]
+        let englishHits = englishMarkers.reduce(0) { $0 + (lowerSample.contains($1) ? 1 : 0) }
+
+        if expectsJapanese {
+            if hasJP { return 36.0 }
+            if englishHits >= 3 && !hasJP && sampleCJKCount == 0 { return -150.0 }
+            if nonLatinRatio < 0.05 { return -65.0 }
+        } else if expectsKorean {
+            if hasKO { return 36.0 }
+            if englishHits >= 3 && !hasKO { return -150.0 }
+            if nonLatinRatio < 0.05 { return -65.0 }
+        } else if expectsCJK {
+            if sampleCJKCount >= 8 { return 30.0 }
+            if englishHits >= 3 && sampleCJKCount == 0 { return -140.0 }
+        } else if expectsCyrillic {
+            if hasRU { return 30.0 }
+            if englishHits >= 3 && !hasRU { return -135.0 }
+        } else if expectsArabic {
+            if hasAR { return 30.0 }
+        } else {
+            // Pure Latin/Indonesian/English song should not display unrelated CJK/Cyrillic/Arabic translations
+            if nonLatinRatio >= 0.45 && (hasJP || hasKO || hasRU || hasAR || sampleCJKCount >= 8) {
+                return -140.0
+            }
+        }
+        return 0.0
+    }
+
     static func scoreCandidate(
         trackName: String,
         artistName: String,
@@ -845,6 +912,7 @@ final class LyricsParserAndFetcher {
         let normTrack = trackName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let normExpTitle = expectedTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let normRawAll = rawInputTitle.lowercased()
+        let eTokCount = normalizedTokens(normExpTitle).count
         if !normExpTitle.isEmpty {
             let tTokens = normalizedTokens(normTrack)
             let eTokens = normalizedTokens(normExpTitle)
@@ -869,7 +937,7 @@ final class LyricsParserAndFetcher {
             }
         }
 
-        // 3. Cross-script Artist matching (supports YouTube "Artist - Title" & channel mismatch tolerance)
+        // 3. Cross-script Artist matching (strictly rejects wrong artist on ambiguous short titles)
         let normArtist = artistName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let normExpArtist = expectedArtist.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if !normArtist.isEmpty {
@@ -884,24 +952,37 @@ final class LyricsParserAndFetcher {
             } else if inRawTitle || normRawAll.contains(normArtist) {
                 score += 26.0
             } else if !normExpArtist.isEmpty {
-                score -= 46.0
+                score -= (eTokCount <= 2) ? 105.0 : 78.0
             }
         }
 
-        // 4. Reject unwanted remix / live / cover / sped-up / instrumental variants unless requested
-        let variantTags = ["remix", "live", "cover", "karaoke", "instrumental", "sped up", "slowed", "nightcore", "acoustic", "8d", "lofi", "lo-fi", "tribute", "piano version", "guitar version"]
+        // 4. Reject unwanted covers, English adaptations, instrumentals, or speed-altered edits unless requested
+        let variantTags = [
+            "remix", "live", "cover", "karaoke", "instrumental", "(inst", "inst)", "off vocal",
+            "sped up", "spedup", "slowed", "nightcore", "acoustic", "8d", "lofi", "lo-fi",
+            "tribute", "piano version", "guitar version", "english ver", "english version",
+            "eng ver", "english cover", "indonesian ver", "tv size", "short ver", "music box", "8-bit"
+        ]
         for tag in variantTags {
             let inCandidate = normTrack.contains(tag)
             let requested = normRawAll.contains(tag) || normExpArtist.contains(tag)
             if inCandidate && !requested {
-                score -= 58.0
+                score -= 68.0
                 break
             }
         }
 
-        // 5. Lyric line count & timestamp coverage check
+        // 5. Lyric line count, timestamp coverage & script-language consistency check
         if let lines = parsedLines, hasSynced {
             score += lineCoveragePenalty(lines: lines, targetDuration: targetDuration)
+            score += scriptConsistencyScore(
+                lines: lines,
+                trackName: trackName,
+                artistName: artistName,
+                rawInputTitle: rawInputTitle,
+                expectedTitle: expectedTitle,
+                expectedArtist: expectedArtist
+            )
         }
 
         return score
@@ -1178,6 +1259,122 @@ final class LyricsParserAndFetcher {
         }
     }
 
+    // MARK: - Tier 1C: Kugou Music (Fast Synced LRC for Global / J-Pop / K-Pop / SEA)
+
+    private func fetchKugouCandidates(
+        token: UUID,
+        candidates: [(track: String, artist: String)],
+        rawTitle: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        targetDuration: TimeInterval,
+        onBatch: @escaping ([RankedCandidate]) -> Void,
+        completion: @escaping () -> Void
+    ) {
+        guard let cand = candidates.first else {
+            completion()
+            return
+        }
+        let keyword = cand.artist.isEmpty ? cand.track : "\(cand.artist) - \(cand.track)"
+        guard let kEnc = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let searchURL = URL(string: "https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=\(kEnc)&duration=\(Int(max(0, targetDuration) * 1000))") else {
+            completion()
+            return
+        }
+
+        let kgGroup = DispatchGroup()
+        kgGroup.enter()
+        startManagedTask(url: searchURL, token: token, headers: ["User-Agent": "Mozilla/5.0"]) { [weak self] data, _, _ in
+            guard let self = self,
+                  let data = data,
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let list = root["candidates"] as? [[String: Any]], !list.isEmpty else {
+                kgGroup.leave()
+                return
+            }
+
+            let ranked = list.sorted { a, b in
+                let dA = (a["duration"] as? Double ?? 0) / 1000.0
+                let dB = (b["duration"] as? Double ?? 0) / 1000.0
+                let sA = Self.scoreCandidate(
+                    trackName: (a["song"] as? String) ?? "",
+                    artistName: (a["singer"] as? String) ?? "",
+                    rawInputTitle: rawTitle,
+                    expectedTitle: expectedTitle,
+                    expectedArtist: expectedArtist,
+                    refDuration: dA,
+                    targetDuration: targetDuration,
+                    hasSynced: true,
+                    hasWordTimings: false
+                )
+                let sB = Self.scoreCandidate(
+                    trackName: (b["song"] as? String) ?? "",
+                    artistName: (b["singer"] as? String) ?? "",
+                    rawInputTitle: rawTitle,
+                    expectedTitle: expectedTitle,
+                    expectedArtist: expectedArtist,
+                    refDuration: dB,
+                    targetDuration: targetDuration,
+                    hasSynced: true,
+                    hasWordTimings: false
+                )
+                return sA > sB
+            }.prefix(2)
+
+            for item in ranked {
+                guard let cid = item["id"] as? String,
+                      let accessKey = item["accesskey"] as? String,
+                      let dlURL = URL(string: "https://lyrics.kugou.com/download?ver=1&client=pc&id=\(cid)&accesskey=\(accessKey)&fmt=lrc&charset=utf8") else {
+                    continue
+                }
+                let sName = (item["song"] as? String) ?? expectedTitle
+                let sArtist = (item["singer"] as? String) ?? expectedArtist
+                let refDur = ((item["duration"] as? Double) ?? 0) / 1000.0
+
+                kgGroup.enter()
+                self.startManagedTask(url: dlURL, token: token, headers: ["User-Agent": "Mozilla/5.0"]) { dData, _, _ in
+                    defer { kgGroup.leave() }
+                    guard let dData = dData,
+                          let dJson = try? JSONSerialization.jsonObject(with: dData) as? [String: Any],
+                          let b64 = dJson["content"] as? String,
+                          let rawBytes = Data(base64Encoded: b64),
+                          var lrc = String(data: rawBytes, encoding: .utf8) else {
+                        return
+                    }
+                    lrc = lrc.replacingOccurrences(of: "\u{FEFF}", with: "")
+                    let parsed = Self.parseLRCWithMeta(lrc)
+                    guard !parsed.lines.isEmpty else { return }
+                    let durVal = refDur > 10 ? refDur : targetDuration
+                    let sc = Self.scoreCandidate(
+                        trackName: sName,
+                        artistName: sArtist,
+                        rawInputTitle: rawTitle,
+                        expectedTitle: expectedTitle,
+                        expectedArtist: expectedArtist,
+                        refDuration: durVal,
+                        targetDuration: targetDuration,
+                        hasSynced: true,
+                        hasWordTimings: parsed.hasWordTimings,
+                        parsedLines: parsed.lines
+                    )
+                    onBatch([RankedCandidate(
+                        lines: parsed.lines,
+                        sourceName: "Kugou LRC",
+                        isEstimated: false,
+                        hasWordTimings: parsed.hasWordTimings,
+                        referenceDuration: durVal,
+                        matchScore: sc
+                    )])
+                }
+            }
+            kgGroup.leave()
+        }
+
+        kgGroup.notify(queue: DispatchQueue.global(qos: .userInitiated)) {
+            completion()
+        }
+    }
+
     // MARK: - Tier 2B & 3: iTunes Canonical Track Resolver + Lyrics.ovh Fallback
 
     private func recoverViaCanonicalMetadataAndPlainFallback(
@@ -1437,6 +1634,7 @@ final class LyricsParserAndFetcher {
 
     private static func parseLRCWithMeta(_ lrc: String) -> (lines: [LyricLine], hasWordTimings: Bool) {
         var rawEntries: [(TimeInterval, String)] = []
+        var pauseBoundaries: [TimeInterval] = []
         let regex = try? NSRegularExpression(pattern: #"\[(\d{1,2}):(\d{2})(?:[\.:](\d{1,3}))?\]"#)
         var detectedEnhanced = false
 
@@ -1448,11 +1646,6 @@ final class LyricsParserAndFetcher {
 
             let textStart = lastMatch.range.location + lastMatch.range.length
             let text = nsLine.substring(from: textStart).trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty { continue }
-
-            if text.hasPrefix("作词") || text.hasPrefix("作曲") || text.hasPrefix("编曲") {
-                continue
-            }
 
             for m in matches {
                 let minStr = nsLine.substring(with: m.range(at: 1))
@@ -1465,11 +1658,23 @@ final class LyricsParserAndFetcher {
                     frac = (Double(fracStr) ?? 0) / div
                 }
                 let time = (Double(minStr) ?? 0) * 60.0 + (Double(secStr) ?? 0) + frac
-                rawEntries.append((time, text))
+                if text.isEmpty {
+                    // Preserve empty LRC timestamps as explicit instrumental/breath end markers
+                    pauseBoundaries.append(time)
+                } else if !text.hasPrefix("作词") && !text.hasPrefix("作曲") && !text.hasPrefix("编曲") && !text.hasPrefix("制作人") {
+                    rawEntries.append((time, text))
+                }
             }
         }
 
         rawEntries.sort { $0.0 < $1.0 }
+        pauseBoundaries.sort()
+
+        func clampedEnd(from start: TimeInterval, fallbackNext: TimeInterval?) -> TimeInterval? {
+            guard let p = pauseBoundaries.first(where: { $0 > start + 0.35 }) else { return nil }
+            if let nxt = fallbackNext, p >= nxt { return nil }
+            return p
+        }
 
         var parsed: [LyricLine] = []
         var i = 0
@@ -1485,8 +1690,10 @@ final class LyricsParserAndFetcher {
 
                 // Simultaneous OR call-and-response backing line arriving up to 3.2s after main phrase
                 if !s1.main.isEmpty && s2.main.isEmpty, let bg2 = s2.backing, gap >= 0, gap <= 3.2 {
+                    let endBoundary = clampedEnd(from: t1, fallbackNext: (i + 2 < rawEntries.count) ? rawEntries[i + 2].0 : nil)
                     parsed.append(LyricLine(
                         time: t1,
+                        endTime: endBoundary,
                         backingTime: t2,
                         mainText: s1.main,
                         backingText: mergeBacking(s1.backing, bg2),
@@ -1498,8 +1705,10 @@ final class LyricsParserAndFetcher {
                     continue
                 } else if gap <= 0.40 {
                     if s1.main.isEmpty, let bg1 = s1.backing, !s2.main.isEmpty {
+                        let endBoundary = clampedEnd(from: t2, fallbackNext: (i + 2 < rawEntries.count) ? rawEntries[i + 2].0 : nil)
                         parsed.append(LyricLine(
                             time: t2,
+                            endTime: endBoundary,
                             backingTime: t1,
                             mainText: s2.main,
                             backingText: mergeBacking(bg1, s2.backing),
@@ -1510,8 +1719,10 @@ final class LyricsParserAndFetcher {
                         i += 2
                         continue
                     } else if !s1.main.isEmpty && !s2.main.isEmpty && s2.main.count < s1.main.count {
+                        let endBoundary = clampedEnd(from: t1, fallbackNext: (i + 2 < rawEntries.count) ? rawEntries[i + 2].0 : nil)
                         parsed.append(LyricLine(
                             time: t1,
+                            endTime: endBoundary,
                             backingTime: t2,
                             mainText: s1.main,
                             backingText: s2.main,
@@ -1528,8 +1739,11 @@ final class LyricsParserAndFetcher {
             let split = splitEnhancedAndBacking(lineTime: t1, raw: text1)
             if !split.words.isEmpty { detectedEnhanced = true }
             if !split.main.isEmpty || !(split.backing ?? "").isEmpty {
+                let nxtTime = (i + 1 < rawEntries.count) ? rawEntries[i + 1].0 : nil
+                let endBoundary = clampedEnd(from: t1, fallbackNext: nxtTime)
                 parsed.append(LyricLine(
                     time: t1,
+                    endTime: endBoundary,
                     backingTime: split.backingWords.first?.time,
                     backingEndTime: split.backingWords.last.map { $0.time + $0.duration },
                     mainText: split.main,
@@ -1659,12 +1873,18 @@ final class LyricsParserAndFetcher {
             let nextTime = (idx + 1 < lines.count) ? lines[idx + 1].time : (line.time + 4.5)
             let gap = max(0.6, nextTime - line.time)
 
-            // Main phrase window & word timings
-            let estMainDur = line.mainText.isEmpty ? 0.0 : max(0.85, Double(line.mainText.count) * 0.086)
-            let mainPhraseDur = gap > 3.6
-                ? min(gap * 0.80, max(estMainDur, 1.8))
-                : min(gap * 0.92, max(estMainDur, gap * 0.72))
-            let computedMainEnd = line.endTime ?? (line.time + mainPhraseDur)
+            // Main phrase window & natural breath gap before next line
+            let cjkCount = line.mainText.unicodeScalars.filter {
+                (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) || (0xAC00...0xD7A3).contains($0.value)
+            }.count
+            let latinCount = max(0, line.mainText.count - cjkCount)
+            let speechEst = line.mainText.isEmpty ? 0.0 : max(0.85, Double(cjkCount) * 0.185 + Double(latinCount) * 0.078)
+            let breathMargin = gap >= 4.0 ? min(1.25, gap * 0.28) : min(0.45, max(0.20, gap * 0.14))
+            let maxWindow = max(0.50, gap - breathMargin)
+            let targetSpan = gap > 3.6
+                ? min(maxWindow, max(speechEst, 1.55))
+                : min(maxWindow, max(speechEst * 0.92, gap * 0.62))
+            let computedMainEnd = line.endTime.map { min(maxWindow + line.time, max(line.time + 0.5, $0)) } ?? (line.time + targetSpan)
             let finalMainWords = !line.words.isEmpty
                 ? line.words
                 : buildWeightedWords(text: line.mainText, start: line.time, duration: max(0.5, computedMainEnd - line.time))
@@ -1724,21 +1944,30 @@ final class LyricsParserAndFetcher {
         let weights: [Double] = tokens.enumerated().map { idx, tok in
             let lower = tok.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let alpha = tok.unicodeScalars.filter { $0.properties.isAlphabetic || ($0.isASCII && $0.value >= 48) }.count
-            let vowelCount = tok.unicodeScalars.filter { "aeiouaeiouyAEIOU".unicodeScalars.contains($0) }.count
-            let punctPause = (tok.contains(",") || tok.contains(";")) ? 1.65 : ((tok.contains("!") || tok.contains("?") || tok.contains(".")) ? 1.35 : 0.0)
+            let vowelCount = tok.unicodeScalars.filter { "aeiouyAEIOUY".unicodeScalars.contains($0) }.count
             let isFunctionWord = ["the", "a", "an", "to", "in", "on", "of", "and", "di", "ke", "yang", "dan", "ni", "no", "wa", "ga", "o", "e"].contains(lower)
-            let paceMult = isFunctionWord ? 0.72 : (idx + 1 == tokens.count ? 1.32 : 1.0)
-            let base = Double(alpha) + Double(vowelCount) * 0.25 + punctPause
+            let paceMult = isFunctionWord ? 0.74 : (idx + 1 == tokens.count ? 1.25 : 1.0)
+            let base = Double(alpha) + Double(vowelCount) * 0.22
             return max(1.0, base * paceMult)
         }
+        // Reserve real inter-clause breath pauses after commas/semicolons so karaoke rests gently during singer breaths
+        let pauseSlots = tokens.enumerated().map { idx, tok -> Double in
+            guard idx + 1 < tokens.count else { return 0.0 }
+            if tok.contains(",") || tok.contains(";") || tok.contains("、") || tok.contains("...") {
+                return min(0.24, duration * 0.12)
+            }
+            return 0.0
+        }
+        let totalPauses = pauseSlots.reduce(0, +)
+        let activeSingDuration = max(0.35, duration - totalPauses)
         let totalWeight = max(1.0, weights.reduce(0, +))
 
         var cursor = start
         var wordTimings: [LyricWord] = []
         for (wIdx, tok) in tokens.enumerated() {
-            let dur = max(0.08, (weights[wIdx] / totalWeight) * duration)
+            let dur = max(0.08, (weights[wIdx] / totalWeight) * activeSingDuration)
             wordTimings.append(LyricWord(time: cursor, duration: dur, text: tok))
-            cursor += dur
+            cursor += dur + pauseSlots[wIdx]
         }
         return wordTimings
     }

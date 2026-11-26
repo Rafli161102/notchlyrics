@@ -365,6 +365,44 @@ enum CoreEngineTests {
         let pace = engine.realtimeDeliveryTempoScale()
         check(pace >= 0.70 && pace <= 1.55, "realtime delivery tempo scale stays safely bounded (\(pace))")
 
+        // 11. Language/Script Guard, Variant Rejection & Empty-LRC Breath Pause Clamping
+        let jpNativeLines = (0..<6).map { LyricLine(time: Double($0) * 18.0, mainText: "夜に駆ける夢を見てる", backingText: nil) }
+        let jpEngTranslationLines = (0..<6).map { LyricLine(time: Double($0) * 18.0, mainText: "Into the night we run and see the moon in your eyes", backingText: nil) }
+        let jpNativeScore = LyricsParserAndFetcher.scoreCandidate(
+            trackName: "夜に駆ける", artistName: "YOASOBI", rawInputTitle: "夜に駆ける",
+            expectedTitle: "夜に駆ける", expectedArtist: "YOASOBI",
+            refDuration: 260, targetDuration: 260, hasSynced: true, hasWordTimings: false, parsedLines: jpNativeLines
+        )
+        let jpEngScore = LyricsParserAndFetcher.scoreCandidate(
+            trackName: "夜に駆ける", artistName: "YOASOBI", rawInputTitle: "夜に駆ける",
+            expectedTitle: "夜に駆ける", expectedArtist: "YOASOBI",
+            refDuration: 260, targetDuration: 260, hasSynced: true, hasWordTimings: false, parsedLines: jpEngTranslationLines
+        )
+        check(jpNativeScore > 140 && jpEngScore < 65, "Japanese track prioritizes native Kana lyrics and rejects English translations (jp=\(jpNativeScore) eng=\(jpEngScore))")
+
+        let instPenalty = LyricsParserAndFetcher.scoreCandidate(
+            trackName: "YOASOBI 夜に駆ける(inst)", artistName: "YOASOBI", rawInputTitle: "YOASOBI 夜に駆ける",
+            expectedTitle: "夜に駆ける", expectedArtist: "YOASOBI",
+            refDuration: 260, targetDuration: 260, hasSynced: true, hasWordTimings: false, parsedLines: jpNativeLines
+        )
+        check(jpNativeScore > instPenalty + 50, "(inst) instrumental candidate loses cleanly to original vocal track")
+
+        let wrongArtistLemon = LyricsParserAndFetcher.scoreCandidate(
+            trackName: "Lemon", artistName: "U2", rawInputTitle: "Kenshi Yonezu - Lemon",
+            expectedTitle: "Lemon", expectedArtist: "Kenshi Yonezu",
+            refDuration: 255, targetDuration: 255, hasSynced: true, hasWordTimings: false, parsedLines: jpEngTranslationLines
+        )
+        check(wrongArtistLemon < 65, "short 1-word title with mismatched artist is rejected (\(wrongArtistLemon))")
+
+        let pauseParsed = LyricsParserAndFetcher.parseLRC("""
+        [00:45.00]Aku pulang
+        [00:48.00]
+        [00:56.00]Sampai akhir waktu
+        """)
+        let synthesized = LyricsParserAndFetcher.synthesizeWordTimings(for: pauseParsed)
+        check((pauseParsed.first?.endTime ?? 99) <= 48.1, "empty LRC timestamp preserves instrumental/breath end boundary")
+        check((synthesized.first?.words.last.map { $0.time + $0.duration } ?? 99) <= 48.0, "karaoke words finish before breath gap instead of dragging across 8s pause")
+
         if failures > 0 {
             print("\(failures) failing core test(s)")
             exit(1)

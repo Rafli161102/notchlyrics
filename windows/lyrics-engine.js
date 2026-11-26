@@ -155,6 +155,41 @@ function normalizedTokens(text) {
   return new Set(cleaned.split(/\s+/).filter(Boolean));
 }
 
+function scriptConsistencyScore({ lines, trackName, artistName, rawInputTitle, expectedTitle, expectedArtist }) {
+  const metaText = `${rawInputTitle} ${expectedTitle} ${expectedArtist} ${trackName} ${artistName}`;
+  const expectsJP = /[\u3040-\u30FF]/.test(metaText);
+  const expectsKO = /[\uAC00-\uD7A3]/.test(metaText);
+  const expectsCJK = /[\u4E00-\u9FFF]/.test(metaText);
+  const sample = (lines || []).slice(0, 16).map((l) => l.mainText || '').join(' ');
+  if (!sample) return 0;
+
+  const hasJP = /[\u3040-\u30FF]/.test(sample);
+  const hasKO = /[\uAC00-\uD7A3]/.test(sample);
+  const cjkCount = (sample.match(/[\u4E00-\u9FFF]/g) || []).length;
+  const nonLatin = (sample.match(/[^\u0000-\u024F\s\p{P}\p{N}]/gu) || []).length;
+  const alphaCount = Math.max(1, (sample.match(/\p{L}/gu) || []).length);
+  const ratio = nonLatin / alphaCount;
+  const lower = ` ${sample.toLowerCase()} `;
+  const enMarkers = [' the ', ' and ', ' you ', ' my ', ' your ', ' into ', ' night ', ' love ', ' with ', ' that '];
+  const enHits = enMarkers.filter((w) => lower.includes(w)).length;
+
+  if (expectsJP) {
+    if (hasJP) return 36;
+    if (enHits >= 3 && !hasJP && cjkCount === 0) return -150;
+    if (ratio < 0.05) return -65;
+  } else if (expectsKO) {
+    if (hasKO) return 36;
+    if (enHits >= 3 && !hasKO) return -150;
+    if (ratio < 0.05) return -65;
+  } else if (expectsCJK) {
+    if (cjkCount >= 8) return 30;
+    if (enHits >= 3 && cjkCount === 0) return -140;
+  } else if (ratio >= 0.45 && (hasJP || hasKO || cjkCount >= 8)) {
+    return -140;
+  }
+  return 0;
+}
+
 function scoreCandidate({ trackName, artistName, rawInputTitle, expectedTitle, expectedArtist, refDuration, targetDuration, hasSynced, hasWordTimings, parsedLines }) {
   let score = hasSynced ? 100 : 20;
   if (hasWordTimings) score += 26;
@@ -170,6 +205,7 @@ function scoreCandidate({ trackName, artistName, rawInputTitle, expectedTitle, e
   const normTrack = String(trackName || '').toLowerCase().trim();
   const normExpTitle = String(expectedTitle || '').toLowerCase().trim();
   const normRawAll = String(rawInputTitle || '').toLowerCase();
+  const expTokCount = normalizedTokens(normExpTitle).size;
 
   if (normExpTitle) {
     const tTok = normalizedTokens(normTrack);
@@ -206,16 +242,16 @@ function scoreCandidate({ trackName, artistName, rawInputTitle, expectedTitle, e
     } else if (inRawTitle || normRawAll.includes(normArtist)) {
       score += 26;
     } else if (normExpArtist) {
-      score -= 46;
+      score -= (expTokCount <= 2) ? 105 : 78;
     }
   }
 
-  const variantTags = ['remix', 'live', 'cover', 'karaoke', 'instrumental', 'sped up', 'slowed', 'nightcore', 'acoustic', '8d', 'lofi', 'lo-fi', 'tribute'];
+  const variantTags = ['remix', 'live', 'cover', 'karaoke', 'instrumental', '(inst', 'inst)', 'off vocal', 'sped up', 'spedup', 'slowed', 'nightcore', 'acoustic', '8d', 'lofi', 'lo-fi', 'tribute', 'english ver', 'english version', 'eng ver', 'english cover', 'indonesian ver', 'tv size', 'short ver'];
   for (const tag of variantTags) {
     const inCand = normTrack.includes(tag);
     const requested = normRawAll.includes(tag) || normExpArtist.includes(tag);
     if (inCand && !requested) {
-      score -= 58;
+      score -= 68;
       break;
     }
   }
@@ -227,6 +263,7 @@ function scoreCandidate({ trackName, artistName, rawInputTitle, expectedTitle, e
       if (lastTime > targetDuration + 18) score -= 48;
       else if (lastTime < targetDuration * 0.25) score -= 42;
     }
+    score += scriptConsistencyScore({ lines: parsedLines, trackName, artistName, rawInputTitle, expectedTitle, expectedArtist });
   }
   return score;
 }
@@ -435,30 +472,62 @@ async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }
     }
   }
 
-  // Concurrent NetEase YRC / LRC search
+  // Concurrent NetEase YRC / LRC + Kugou LRC multi-source racing
   if (qStr) {
-    const ne = await fetchJson(`https://music.163.com/api/search/get?s=${encodeURIComponent(qStr)}&type=1&limit=5`, 2800, { 'User-Agent': 'Mozilla/5.0' });
-    const songs = ne?.result?.songs || [];
-    for (const song of songs.slice(0, 2)) {
-      const sDur = (song.duration || 0) / 1000;
-      const sArtist = song.artists?.[0]?.name || '';
-      const payload = await fetchJson(`https://music.163.com/api/song/lyric?os=pc&id=${song.id}&lv=-1&yv=-1`, 2600, { 'User-Agent': 'Mozilla/5.0' });
-      const yrcRaw = payload?.yrc?.lyric;
-      const lrcRaw = payload?.lrc?.lyric;
-      if (yrcRaw) {
-        const yrcLines = parseYRC(yrcRaw);
-        if (yrcLines.length) {
-          const sc = scoreCandidate({ trackName: song.name || '', artistName: sArtist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: sDur || duration, targetDuration: duration, hasSynced: true, hasWordTimings: true, parsedLines: yrcLines });
-          pool.push({ lines: yrcLines, sourceName: 'NetEase YRC', isEstimated: false, hasWordTimings: true, referenceDuration: sDur || duration, matchScore: sc });
-        }
-      } else if (lrcRaw) {
-        const lrcLines = parseLRC(lrcRaw);
-        if (lrcLines.length) {
-          const sc = scoreCandidate({ trackName: song.name || '', artistName: sArtist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: sDur || duration, targetDuration: duration, hasSynced: true, hasWordTimings: false, parsedLines: lrcLines });
-          pool.push({ lines: lrcLines, sourceName: 'NetEase LRC', isEstimated: false, hasWordTimings: false, referenceDuration: sDur || duration, matchScore: sc });
+    const nePromise = (async () => {
+      const ne = await fetchJson(`https://music.163.com/api/search/get?s=${encodeURIComponent(qStr)}&type=1&limit=5`, 2800, { 'User-Agent': 'Mozilla/5.0' });
+      const songs = ne?.result?.songs || [];
+      for (const song of songs.slice(0, 2)) {
+        const sDur = (song.duration || 0) / 1000;
+        const sArtist = song.artists?.[0]?.name || '';
+        const payload = await fetchJson(`https://music.163.com/api/song/lyric?os=pc&id=${song.id}&lv=-1&yv=-1`, 2600, { 'User-Agent': 'Mozilla/5.0' });
+        const yrcRaw = payload?.yrc?.lyric;
+        const lrcRaw = payload?.lrc?.lyric;
+        if (yrcRaw) {
+          const yrcLines = parseYRC(yrcRaw);
+          if (yrcLines.length) {
+            const sc = scoreCandidate({ trackName: song.name || '', artistName: sArtist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: sDur || duration, targetDuration: duration, hasSynced: true, hasWordTimings: true, parsedLines: yrcLines });
+            pool.push({ lines: yrcLines, sourceName: 'NetEase YRC', isEstimated: false, hasWordTimings: true, referenceDuration: sDur || duration, matchScore: sc });
+          }
+        } else if (lrcRaw) {
+          const lrcLines = parseLRC(lrcRaw);
+          if (lrcLines.length) {
+            const sc = scoreCandidate({ trackName: song.name || '', artistName: sArtist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: sDur || duration, targetDuration: duration, hasSynced: true, hasWordTimings: false, parsedLines: lrcLines });
+            pool.push({ lines: lrcLines, sourceName: 'NetEase LRC', isEstimated: false, hasWordTimings: false, referenceDuration: sDur || duration, matchScore: sc });
+          }
         }
       }
-    }
+    })();
+
+    const kgPromise = (async () => {
+      const kw = first.artist ? `${first.artist} - ${first.track}` : first.track;
+      const kg = await fetchJson(`https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=${encodeURIComponent(kw)}&duration=${Math.round((duration || 0) * 1000)}`, 2800, { 'User-Agent': 'Mozilla/5.0' });
+      const cands = kg?.candidates || [];
+      for (const item of cands.slice(0, 2)) {
+        if (!item?.id || !item?.accesskey) continue;
+        const dl = await fetchJson(`https://lyrics.kugou.com/download?ver=1&client=pc&id=${item.id}&accesskey=${item.accesskey}&fmt=lrc&charset=utf8`, 2600, { 'User-Agent': 'Mozilla/5.0' });
+        if (!dl?.content) continue;
+        const rawLrc = Buffer.from(dl.content, 'base64').toString('utf8').replace(/^\uFEFF/, '');
+        const lines = parseLRC(rawLrc);
+        if (!lines.length) continue;
+        const refDur = (Number(item.duration) || 0) / 1000 || duration;
+        const sc = scoreCandidate({
+          trackName: item.song || resolved.title,
+          artistName: item.singer || resolved.artist,
+          rawInputTitle: title,
+          expectedTitle: resolved.title,
+          expectedArtist: resolved.artist,
+          refDuration: refDur,
+          targetDuration: duration,
+          hasSynced: true,
+          hasWordTimings: false,
+          parsedLines: lines
+        });
+        pool.push({ lines, sourceName: 'Kugou LRC', isEstimated: false, hasWordTimings: false, referenceDuration: refDur, matchScore: sc });
+      }
+    })();
+
+    await Promise.all([nePromise, kgPromise]);
   }
 
   const validSynced = pool.filter((p) => !p.isEstimated && p.matchScore >= 65);
