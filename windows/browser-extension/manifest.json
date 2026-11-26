@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "NotchLyrics - Synchronized Karaoke Overlay",
+  "version": "2.2.0",
+  "description": "Always-visible Golden Ratio OLED Notch synchronized karaoke lyrics overlay for YouTube, YouTube Music, Spotify Web, SoundCloud, and Apple Music.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://lrclib.net/*",
+    "https://music.163.com/*",
+    "https://api.lyrics.ovh/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://music.youtube.com/*",
+        "https://open.spotify.com/*",
+        "https://soundcloud.com/*",
+        "https://music.apple.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

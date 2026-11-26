@@ -1,0 +1,44 @@
+{
+  "name": "notchlyrics-windows",
+  "version": "2.2.0",
+  "description": "Synchronized karaoke lyrics overlay with Golden Ratio OLED Notch UI for Windows 10/11",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "TouchBarLyrics Contributors",
+  "scripts": {
+    "start": "electron .",
+    "test": "node tests/lyrics-engine.test.js",
+    "dist:win": "electron-builder --win --x64 --arm64"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.user.NotchLyrics",
+    "productName": "NotchLyrics",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lyrics-engine.js",
+      "win_smtc.ps1",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}

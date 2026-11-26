@@ -43,3 +43,7 @@ logs/
 # Local tooling
 .vscode/
 .idea/
+
+# Windows Electron build artifacts
+windows/node_modules/
+windows/dist/

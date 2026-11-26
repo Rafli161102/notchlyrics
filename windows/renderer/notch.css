@@ -1,0 +1,271 @@
+:root {
+  --notch-bg: #000000;
+  --notch-accent: #f4d06f;
+  --notch-backing: #fbbf24;
+  --notch-text: #ffffff;
+  --notch-muted: rgba(255, 255, 255, 0.72);
+  --notch-border: rgba(255, 255, 255, 0.14);
+  --phi: 1.618;
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: transparent;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+}
+
+.notch {
+  --notch-width: 336px;
+  --notch-height: 48px;
+  position: relative;
+  width: var(--notch-width);
+  height: var(--notch-height);
+  margin: 0 auto;
+  padding: 6px 14px 8px;
+  border: 0.5px solid var(--notch-border);
+  border-top: none;
+  border-radius: 0 0 13px 13px;
+  background: var(--notch-bg);
+  color: var(--notch-text);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition:
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-top 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notch.style-floating {
+  --notch-width: 318px;
+  margin-top: 8px;
+  border-top: 1px solid var(--notch-border);
+  border-radius: 13px;
+}
+
+.notch.style-strip {
+  --notch-width: 488px;
+  --notch-height: 46px;
+  border-radius: 0 0 10px 10px;
+}
+
+.notch:focus-visible { outline: 2px solid var(--notch-accent); outline-offset: 2px; }
+
+.notch.expanded {
+  --notch-width: 544px;
+  --notch-height: 110px;
+  border-radius: 0 0 21px 21px;
+  padding: 8px 16px 8px;
+  justify-content: space-between;
+}
+
+.notch.style-floating.expanded {
+  --notch-width: 515px;
+  --notch-height: 108px;
+  border-radius: 21px;
+}
+
+.notch.style-strip.expanded {
+  --notch-width: 610px;
+  --notch-height: 104px;
+  border-radius: 0 0 16px 16px;
+}
+
+.upper-stage {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.notch.expanded .upper-stage {
+  height: 61.8%;
+  gap: 13px;
+}
+
+.artwork {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: 0 0 auto;
+  transition: opacity 220ms ease, width 220ms ease;
+}
+
+.notch.expanded .artwork.has-image {
+  width: 52px;
+  height: 52px;
+  opacity: 1;
+}
+
+.lyrics {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.main-lyric, .backing-lyric {
+  margin: 0;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notch.expanded .main-lyric,
+.notch.expanded .backing-lyric {
+  text-align: left;
+}
+
+.main-lyric {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.24;
+  color: var(--notch-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.backing-lyric {
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.18;
+  color: var(--notch-backing);
+}
+
+.main-lyric .sung { color: var(--notch-accent); }
+.main-lyric .upcoming { color: rgba(255, 255, 255, 0.52); }
+
+.divider {
+  height: 0.5px;
+  width: 100%;
+  background: var(--notch-border);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.notch.expanded .divider { opacity: 1; }
+
+.lower-stage {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  opacity: 0;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notch.expanded .lower-stage {
+  display: flex;
+  opacity: 1;
+}
+
+.metadata {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.track-title, .artist-album {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--notch-text);
+}
+
+.artist-album {
+  font-size: 10.5px;
+  color: var(--notch-muted);
+}
+
+.time-readout {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--notch-muted);
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0.5px solid var(--notch-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--notch-text);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+button:hover { background: rgba(255, 255, 255, 0.18); }
+button:active { background: rgba(255, 255, 255, 0.25); }
+button:focus-visible { outline: 2px solid var(--notch-accent); outline-offset: 2px; }
+
+.progress {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 2px;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 1px;
+}
+
+.progress #progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--notch-accent);
+  border-radius: 1px;
+}
+
+.progress #progress-bead {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--notch-text);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notch, .artwork, .main-lyric, .backing-lyric, .lower-stage { transition: none; }
+}

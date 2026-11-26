@@ -20,6 +20,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private let paddingPopup = NSPopUpButton()
     private let radiusPopup = NSPopUpButton()
     private let tagPopup = NSPopUpButton()
+    private let notchStylePopup = NSPopUpButton()
     private let showBorderCheck = NSButton(checkboxWithTitle: "Tampilkan garis tepi (border)", target: nil, action: nil)
 
     // Color Pickers & Hex Inputs
@@ -241,6 +242,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         configurePopup(paddingPopup, titles: ["Ketat (4 pt)", "Standar (8 pt)", "Lega (16 pt)"])
         configurePopup(radiusPopup, titles: ["Tajam (0)", "Tactile (4)", "Rounded (6)"])
         configurePopup(tagPopup, titles: ["BG ·", "[BG]", "↳"])
+        configurePopup(notchStylePopup, titles: ThemeNotchStyle.allCases.map { $0.displayName })
 
         showBorderCheck.target = self
         showBorderCheck.action = #selector(onFieldEdited)
@@ -252,7 +254,8 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
             ("Posisi Back Vocal", backingPlacementPopup, "Garis Progress", progressPosPopup),
             ("Jenis Font", fontPopup, "Ukuran Main Vocal", mainSizePopup),
             ("Ukuran Back Vocal", backingSizePopup, "Tag Back Vocal", tagPopup),
-            ("Jarak Tepi", paddingPopup, "Kelengkungan Sudut", radiusPopup)
+            ("Jarak Tepi", paddingPopup, "Kelengkungan Sudut", radiusPopup),
+            ("Gaya Notch Atas", notchStylePopup, "Tampilan Border", showBorderCheck)
         ]
 
         let grid = NSGridView(numberOfColumns: 4, rows: rows.count)
@@ -265,11 +268,11 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
             grid.cell(atColumnIndex: 3, rowIndex: r).contentView = row.3
         }
 
-        let box = NSStackView(views: [grid, showBorderCheck])
+        let box = NSStackView(views: [grid])
         box.orientation = .vertical
         box.alignment = .leading
-        box.spacing = 12
-        box.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 10, right: 12)
+        box.spacing = 10
+        box.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 8, right: 12)
         return box
     }
 
@@ -400,6 +403,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         if let idx = ThemeColorSyncMode.allCases.firstIndex(of: t.colorSyncMode) { colorSyncPopup.selectItem(at: idx) }
         if let idx = ThemeLineTransition.allCases.firstIndex(of: t.lineTransition) { lineTransPopup.selectItem(at: idx) }
         if let idx = ThemeWordAnimation.allCases.firstIndex(of: t.wordAnimation) { wordAnimPopup.selectItem(at: idx) }
+        if let idx = ThemeNotchStyle.allCases.firstIndex(of: t.notchStyle) { notchStylePopup.selectItem(at: idx) }
 
         mainSizePopup.selectItem(at: t.mainFontSize <= 12.0 ? 0 : (t.mainFontSize <= 13.8 ? 1 : 2))
         backingSizePopup.selectItem(at: t.backingFontSize <= 9.5 ? 0 : (t.backingFontSize <= 10.8 ? 1 : 2))
@@ -484,6 +488,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         t.showBorder = (showBorderCheck.state == .on)
 
         t.colorSyncMode = ThemeColorSyncMode.allCases[max(0, colorSyncPopup.indexOfSelectedItem)]
+        t.notchStyle = ThemeNotchStyle.allCases[max(0, notchStylePopup.indexOfSelectedItem)]
         t.lineTransition = ThemeLineTransition.allCases[max(0, lineTransPopup.indexOfSelectedItem)]
         t.wordAnimation = ThemeWordAnimation.allCases[max(0, wordAnimPopup.indexOfSelectedItem)]
         t.wordSpeedScale = CGFloat((wordSpeedSlider.doubleValue * 20.0).rounded() / 20.0)

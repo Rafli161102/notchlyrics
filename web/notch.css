@@ -1,4 +1,11 @@
 :root {
+  --notch-bg: #000000;
+  --notch-accent: #f4d06f;
+  --notch-backing: #fbbf24;
+  --notch-text: #ffffff;
+  --notch-muted: rgba(255, 255, 255, 0.72);
+  --notch-border: rgba(255, 255, 255, 0.14);
+  --phi: 1.618;
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background: transparent;
@@ -13,99 +20,252 @@ body {
 }
 
 .notch {
-  --notch-width: 320px;
-  --notch-height: 44px;
+  --notch-width: 336px;
+  --notch-height: 48px;
+  position: relative;
   width: var(--notch-width);
   height: var(--notch-height);
-  margin: 8px auto 0;
-  padding: 6px 12px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: #050506;
-  color: #f5f5f7;
-  box-shadow: none;
+  margin: 0 auto;
+  padding: 6px 14px 8px;
+  border: 0.5px solid var(--notch-border);
+  border-top: none;
+  border-radius: 0 0 13px 13px;
+  background: var(--notch-bg);
+  color: var(--notch-text);
   overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  transition: width 180ms cubic-bezier(0.2, 0, 0, 1), height 180ms cubic-bezier(0.2, 0, 0, 1), border-radius 180ms cubic-bezier(0.2, 0, 0, 1), padding 180ms cubic-bezier(0.2, 0, 0, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition:
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-top 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.notch:focus-visible { outline: 2px solid #f5f5f7; outline-offset: 2px; }
+.notch.style-floating {
+  --notch-width: 318px;
+  margin-top: 8px;
+  border-top: 1px solid var(--notch-border);
+  border-radius: 13px;
+}
+
+.notch.style-strip {
+  --notch-width: 488px;
+  --notch-height: 46px;
+  border-radius: 0 0 10px 10px;
+}
+
+.notch:focus-visible { outline: 2px solid var(--notch-accent); outline-offset: 2px; }
+
 .notch.expanded {
-  --notch-width: 460px;
-  --notch-height: 96px;
-  border-radius: 16px;
-  padding: 8px 12px;
-  grid-template-columns: 32px minmax(0, 1fr);
-  grid-template-areas:
-    "art lyrics"
-    "art meta"
-    "art controls";
-  grid-template-rows: 18px 32px 44px;
-  column-gap: 10px;
+  --notch-width: 544px;
+  --notch-height: 110px;
+  border-radius: 0 0 21px 21px;
+  padding: 8px 16px 8px;
+  justify-content: space-between;
+}
+
+.notch.style-floating.expanded {
+  --notch-width: 515px;
+  --notch-height: 108px;
+  border-radius: 21px;
+}
+
+.notch.style-strip.expanded {
+  --notch-width: 610px;
+  --notch-height: 104px;
+  border-radius: 0 0 16px 16px;
+}
+
+.upper-stage {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.notch.expanded .upper-stage {
+  height: 61.8%;
+  gap: 13px;
 }
 
 .artwork {
-  grid-area: art;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-radius: 10px;
   object-fit: cover;
-  align-self: start;
-  display: none;
+  flex: 0 0 auto;
+  transition: opacity 220ms ease, width 220ms ease;
 }
-.notch.expanded .artwork.has-image { display: block; }
 
-.lyrics { min-width: 0; grid-area: lyrics; }
-.notch.expanded .lyrics { grid-column: 2; }
-.main-lyric, .backing-lyric, .track-title, .artist, .album {
+.notch.expanded .artwork.has-image {
+  width: 52px;
+  height: 52px;
+  opacity: 1;
+}
+
+.lyrics {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.main-lyric, .backing-lyric {
+  margin: 0;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notch.expanded .main-lyric,
+.notch.expanded .backing-lyric {
+  text-align: left;
+}
+
+.main-lyric {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.24;
+  color: var(--notch-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.backing-lyric {
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.18;
+  color: var(--notch-backing);
+}
+
+.main-lyric .sung { color: var(--notch-accent); }
+.main-lyric .upcoming { color: rgba(255, 255, 255, 0.52); }
+
+.divider {
+  height: 0.5px;
+  width: 100%;
+  background: var(--notch-border);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.notch.expanded .divider { opacity: 1; }
+
+.lower-stage {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  opacity: 0;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notch.expanded .lower-stage {
+  display: flex;
+  opacity: 1;
+}
+
+.metadata {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.track-title, .artist-album {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.main-lyric { font-size: 13px; font-weight: 600; line-height: 1.2; }
-.backing-lyric { font-size: 10px; color: #d99b26; }
-.notch.expanded .backing-lyric { font-size: 10px; }
 
-.metadata { display: none; min-width: 0; grid-area: meta; line-height: 1.25; }
-.notch.expanded .metadata { display: block; }
-.track-title { font-size: 12px; font-weight: 600; }
-.artist, .album { font-size: 10px; color: rgba(245, 245, 247, 0.78); }
+.track-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--notch-text);
+}
 
-.controls { display: none; gap: 8px; justify-content: center; align-items: center; grid-area: controls; }
-.notch.expanded .controls { display: flex; }
+.artist-album {
+  font-size: 10.5px;
+  color: var(--notch-muted);
+}
+
+.time-readout {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--notch-muted);
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
 
 button {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 4px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0.5px solid var(--notch-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
-  color: #f5f5f7;
+  color: var(--notch-text);
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
-button:hover { background: rgba(255, 255, 255, 0.16); }
-button:active { background: rgba(255, 255, 255, 0.22); }
-button:focus-visible { outline: 2px solid #f5f5f7; outline-offset: 2px; }
-button:disabled { cursor: not-allowed; opacity: 0.45; }
+button:hover { background: rgba(255, 255, 255, 0.18); }
+button:active { background: rgba(255, 255, 255, 0.25); }
+button:focus-visible { outline: 2px solid var(--notch-accent); outline-offset: 2px; }
 
 .progress {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 2px;
   height: 1.5px;
-  width: 100%;
-  background: rgba(255, 255, 255, 0.18);
-  grid-column: 1 / -1;
-  overflow: hidden;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 1px;
 }
-.progress span { display: block; height: 100%; width: 0; background: currentColor; }
+
+.progress #progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--notch-accent);
+  border-radius: 1px;
+}
+
+.progress #progress-bead {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--notch-text);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .notch { transition: none; }
+  .notch, .artwork, .main-lyric, .backing-lyric, .lower-stage { transition: none; }
 }

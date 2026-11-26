@@ -1,12 +1,12 @@
 import Foundation
 
-struct LyricWord: Equatable {
+struct LyricWord: Codable, Equatable {
     let time: TimeInterval
     let duration: TimeInterval
     let text: String
 }
 
-struct LyricLine: Equatable {
+struct LyricLine: Codable, Equatable {
     let time: TimeInterval
     let endTime: TimeInterval?
     let backingTime: TimeInterval?
@@ -126,13 +126,21 @@ struct LyricLine: Equatable {
     }
 }
 
-struct FetchedLyricsResult {
+struct FetchedLyricsResult: Codable {
     let lines: [LyricLine]
     let romanizedLines: [LyricLine]
     let sourceName: String
     let isEstimated: Bool
     let hasWordTimings: Bool
     let referenceDuration: TimeInterval
+    var calibratedLeadOffset: TimeInterval
+    var calibratedBackingOffset: TimeInterval
+    var cachedBPM: Double
+
+    enum CodingKeys: String, CodingKey {
+        case lines, romanizedLines, sourceName, isEstimated, hasWordTimings, referenceDuration
+        case calibratedLeadOffset, calibratedBackingOffset, cachedBPM
+    }
 
     init(
         lines: [LyricLine],
@@ -140,7 +148,10 @@ struct FetchedLyricsResult {
         sourceName: String,
         isEstimated: Bool,
         hasWordTimings: Bool = false,
-        referenceDuration: TimeInterval
+        referenceDuration: TimeInterval,
+        calibratedLeadOffset: TimeInterval = 0,
+        calibratedBackingOffset: TimeInterval = 0,
+        cachedBPM: Double = 0
     ) {
         self.lines = lines
         self.romanizedLines = romanizedLines ?? lines
@@ -148,6 +159,22 @@ struct FetchedLyricsResult {
         self.isEstimated = isEstimated
         self.hasWordTimings = hasWordTimings
         self.referenceDuration = referenceDuration
+        self.calibratedLeadOffset = calibratedLeadOffset
+        self.calibratedBackingOffset = calibratedBackingOffset
+        self.cachedBPM = cachedBPM
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lines = try c.decode([LyricLine].self, forKey: .lines)
+        romanizedLines = try c.decodeIfPresent([LyricLine].self, forKey: .romanizedLines) ?? lines
+        sourceName = try c.decode(String.self, forKey: .sourceName)
+        isEstimated = try c.decode(Bool.self, forKey: .isEstimated)
+        hasWordTimings = try c.decodeIfPresent(Bool.self, forKey: .hasWordTimings) ?? false
+        referenceDuration = try c.decode(TimeInterval.self, forKey: .referenceDuration)
+        calibratedLeadOffset = try c.decodeIfPresent(TimeInterval.self, forKey: .calibratedLeadOffset) ?? 0
+        calibratedBackingOffset = try c.decodeIfPresent(TimeInterval.self, forKey: .calibratedBackingOffset) ?? 0
+        cachedBPM = try c.decodeIfPresent(Double.self, forKey: .cachedBPM) ?? 0
     }
 
     func activeLines(romanize: Bool) -> [LyricLine] {
@@ -162,8 +189,188 @@ struct FetchedLyricsResult {
     }
 }
 
+final class DiskLyricsCache {
+    let cacheDir: String
+    private let ioQueue = DispatchQueue(label: "com.user.TouchBarLyrics.diskcache", qos: .utility)
+    private let maxFiles = 400
+
+    init(directory: String? = nil) {
+        self.cacheDir = directory ?? ((NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/TouchBarLyrics/LyricsCache"))
+        try? FileManager.default.createDirectory(atPath: self.cacheDir, withIntermediateDirectories: true)
+    }
+
+    private static func fnv1aHex(_ key: String) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1099511628211
+        }
+        return String(format: "%016llx", hash)
+    }
+
+    private func fileURL(forKey key: String) -> URL {
+        URL(fileURLWithPath: (cacheDir as NSString).appendingPathComponent("\(Self.fnv1aHex(key)).json"))
+    }
+
+    func load(cacheKey: String, fuzzyKey: String, targetDuration: TimeInterval) -> FetchedLyricsResult? {
+        for candidateKey in [cacheKey, fuzzyKey] where !candidateKey.isEmpty {
+            let url = fileURL(forKey: candidateKey)
+            guard let data = try? Data(contentsOf: url),
+                  var decoded = try? JSONDecoder().decode(FetchedLyricsResult.self, from: data),
+                  !decoded.lines.isEmpty else {
+                continue
+            }
+            if targetDuration > 20 && decoded.referenceDuration > 20 && abs(decoded.referenceDuration - targetDuration) > 8.0 && candidateKey != cacheKey {
+                continue
+            }
+            if !decoded.sourceName.contains("Cache") {
+                decoded = FetchedLyricsResult(
+                    lines: decoded.lines,
+                    romanizedLines: decoded.romanizedLines,
+                    sourceName: "\(decoded.sourceName) • Cache",
+                    isEstimated: decoded.isEstimated,
+                    hasWordTimings: decoded.hasWordTimings,
+                    referenceDuration: decoded.referenceDuration,
+                    calibratedLeadOffset: decoded.calibratedLeadOffset,
+                    calibratedBackingOffset: decoded.calibratedBackingOffset,
+                    cachedBPM: decoded.cachedBPM
+                )
+            }
+            return decoded
+        }
+        return nil
+    }
+
+    func save(_ result: FetchedLyricsResult, cacheKey: String, fuzzyKey: String) {
+        guard !result.lines.isEmpty, result.sourceName != "None" else { return }
+        // Normalize source name before writing so repeat loads don't stack "• Cache"
+        var clean = result
+        if clean.sourceName.hasSuffix(" • Cache") {
+            clean = FetchedLyricsResult(
+                lines: result.lines,
+                romanizedLines: result.romanizedLines,
+                sourceName: String(result.sourceName.dropLast(" • Cache".count)),
+                isEstimated: result.isEstimated,
+                hasWordTimings: result.hasWordTimings,
+                referenceDuration: result.referenceDuration,
+                calibratedLeadOffset: result.calibratedLeadOffset,
+                calibratedBackingOffset: result.calibratedBackingOffset,
+                cachedBPM: result.cachedBPM
+            )
+        }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            let fm = FileManager.default
+            try? fm.createDirectory(atPath: self.cacheDir, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            guard let data = try? encoder.encode(clean) else { return }
+            try? data.write(to: self.fileURL(forKey: cacheKey), options: .atomic)
+            if !fuzzyKey.isEmpty && fuzzyKey != cacheKey {
+                try? data.write(to: self.fileURL(forKey: fuzzyKey), options: .atomic)
+            }
+            self.pruneIfNeeded()
+        }
+    }
+
+    func remove(cacheKey: String, fuzzyKey: String) {
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            try? FileManager.default.removeItem(at: self.fileURL(forKey: cacheKey))
+            if !fuzzyKey.isEmpty {
+                try? FileManager.default.removeItem(at: self.fileURL(forKey: fuzzyKey))
+            }
+        }
+    }
+
+    private func pruneIfNeeded() {
+        let dirURL = URL(fileURLWithPath: cacheDir)
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: dirURL,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles
+        ), urls.count > maxFiles else { return }
+
+        let sorted = urls.sorted { a, b in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return da < db
+        }
+        for oldURL in sorted.prefix(urls.count - maxFiles) {
+            try? FileManager.default.removeItem(at: oldURL)
+        }
+    }
+}
+
 final class LyricsParserAndFetcher {
     private var cache: [String: FetchedLyricsResult] = [:]
+    private let cacheLock = NSLock()
+    private var currentFetchToken = UUID()
+    private var activeTasks: [UUID: [UUID: URLSessionDataTask]] = [:]
+    private let taskLock = NSLock()
+    let diskCache: DiskLyricsCache
+
+    private let fastSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 2.6
+        cfg.timeoutIntervalForResource = 4.2
+        cfg.httpMaximumConnectionsPerHost = 8
+        cfg.urlCache = URLCache(memoryCapacity: 8 * 1024 * 1024, diskCapacity: 32 * 1024 * 1024)
+        return URLSession(configuration: cfg)
+    }()
+
+    private func startManagedTask(url: URL, token: UUID, headers: [String: String] = [:], completion: @escaping (Data?, URLResponse?, Error?) -> Void) {
+        var req = URLRequest(url: url, timeoutInterval: 2.6)
+        for (k, v) in headers {
+            req.setValue(v, forHTTPHeaderField: k)
+        }
+        let taskID = UUID()
+        let task = fastSession.dataTask(with: req) { [weak self] data, resp, err in
+            if let self = self {
+                self.taskLock.lock()
+                self.activeTasks[token]?.removeValue(forKey: taskID)
+                self.taskLock.unlock()
+            }
+            completion(data, resp, err)
+        }
+
+        taskLock.lock()
+        let isStillCurrent = (token == currentFetchToken)
+        if isStillCurrent {
+            var tokenMap = activeTasks[token] ?? [:]
+            tokenMap[taskID] = task
+            activeTasks[token] = tokenMap
+        }
+        taskLock.unlock()
+
+        if isStillCurrent {
+            task.resume()
+        } else {
+            completion(nil, nil, nil)
+        }
+    }
+
+    private func cancelStaleTasks(keeping activeToken: UUID) {
+        taskLock.lock()
+        currentFetchToken = activeToken
+        var toCancel: [URLSessionDataTask] = []
+        for (tok, map) in activeTasks where tok != activeToken {
+            toCancel.append(contentsOf: map.values)
+            activeTasks.removeValue(forKey: tok)
+        }
+        taskLock.unlock()
+        for t in toCancel { t.cancel() }
+    }
+
+    private func isTokenCurrent(_ token: UUID) -> Bool {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        return token == currentFetchToken
+    }
+
+    init(diskCache: DiskLyricsCache = DiskLyricsCache()) {
+        self.diskCache = diskCache
+    }
 
     private struct RankedCandidate {
         let lines: [LyricLine]
@@ -196,118 +403,296 @@ final class LyricsParserAndFetcher {
     }
 
     func cachedResult(forKey key: String) -> FetchedLyricsResult? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         return cache[key]
+    }
+
+    func updateCalibration(forKey key: String, rawTitle: String, rawArtist: String, leadOffset: TimeInterval, backingOffset: TimeInterval, bpm: Double) {
+        let fuzzy = fuzzyCacheKey(rawTitle: rawTitle, rawArtist: rawArtist)
+        cacheLock.lock()
+        guard var current = cache[key] else {
+            cacheLock.unlock()
+            return
+        }
+        current.calibratedLeadOffset = leadOffset
+        current.calibratedBackingOffset = backingOffset
+        if bpm >= 55 { current.cachedBPM = bpm }
+        cache[key] = current
+        cacheLock.unlock()
+        diskCache.save(current, cacheKey: key, fuzzyKey: fuzzy)
+    }
+
+    func clearCacheEntry(forKey key: String, rawTitle: String, rawArtist: String) {
+        let fuzzy = fuzzyCacheKey(rawTitle: rawTitle, rawArtist: rawArtist)
+        cacheLock.lock()
+        cache.removeValue(forKey: key)
+        cacheLock.unlock()
+        diskCache.remove(cacheKey: key, fuzzyKey: fuzzy)
+    }
+
+    private func fuzzyCacheKey(rawTitle: String, rawArtist: String) -> String {
+        let t = cleanTitle(rawTitle).lowercased()
+        let a = cleanArtist(rawArtist).lowercased()
+        return t.isEmpty ? "" : "\(t)|\(a)"
+    }
+
+    func normalizeDashSeparators(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\s+[\u2013\u2014\u2015~]\s+"#, with: " - ", options: .regularExpression)
     }
 
     func cleanTitle(_ raw: String) -> String {
         var s = raw
-        let bracketNoise = #"\s*[\(\[]\s*(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Lyric\s*Video|Lyrics?\s*Video|Lyrics?|Lirik(\s*Terjemahan)?|Sub\s*Indo|Audio|Visualizer|MV|HD|4K|Live(\s*Performance)?|Explicit|Remastered(\s*\d+)?|Slowed(\s*\+\s*Reverb)?|Sped\s*Up|Karaoke)\s*[\)\]]"#
+        // Extract inner title from Japanese quotes e.g. YOASOBI「夜に駆ける」
+        if let jpQuoteRegex = try? NSRegularExpression(pattern: #"[「『]([^」』]+)[」』]"#),
+           let m = jpQuoteRegex.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) {
+            let inner = (s as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if inner.count >= 2 { s = inner }
+        }
+        let bracketNoise = #"\s*[\(\[]\s*(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Official\s*Lyric\s*Video|Lyric\s*Video|Lyrics?\s*Video|Lyrics?|Lirik(\s*Terjemahan)?|Sub\s*(Indo|Eng|Indonesia|English)|Audio(\s*Only)?|Visualizer|M/?V|HD|4K|Live(\s*Performance)?|Explicit|Clean(\s*Version)?|Single\s*Version|Radio\s*Edit|Album\s*Version|Remaster(ed)?(\s*\d+)?|Slowed(\s*\+\s*Reverb)?|Sped\s*Up|Speed\s*Up|Karaoke|Color\s*Coded|Prod\.?\s*by\s+[^\)\]]+|From\s+["“][^"”]+["”])\s*[\)\]]"#
         s = s.replacingOccurrences(of: bracketNoise, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"^\s*\[(MV|M/V|Lyrics?|Audio|Official)\]\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s*[-\u2013\u2014]\s*(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Lyric\s*Video|Lyrics?|Lirik(\s*Terjemahan)?|Audio(\s*Only)?|Remaster(ed)?(\s*\d+)?|Single\s*Version|Radio\s*Edit|YouTube)\s*$"#, with: "", options: [.regularExpression, .caseInsensitive])
         s = s.replacingOccurrences(of: #"\s*\|\s*.*$"#, with: "", options: .regularExpression)
         s = s.replacingOccurrences(of: #"\s*//\s*.*$"#, with: "", options: .regularExpression)
+        s = normalizeDashSeparators(s)
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func cleanArtist(_ raw: String) -> String {
-        var s = raw.replacingOccurrences(of: #"\s*-\s*Topic$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        var s = raw.replacingOccurrences(of: #"\s*[-\u2013\u2014]\s*Topic$"#, with: "", options: [.regularExpression, .caseInsensitive])
         s = s.replacingOccurrences(of: #"\s*VEVO$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s*(Official|Channel)$"#, with: "", options: [.regularExpression, .caseInsensitive])
         if let first = s.components(separatedBy: ",").first {
             s = first
         }
-        s = s.replacingOccurrences(of: #"\s+(feat\.?|ft\.?|featuring)\s+.*$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s+(feat\.?|ft\.?|featuring|x|&)\s+.*$"#, with: "", options: [.regularExpression, .caseInsensitive])
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func cleanArtistFull(_ raw: String) -> String {
+        var s = raw.replacingOccurrences(of: #"\s*[-\u2013\u2014]\s*Topic$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s*VEVO$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s*(Official|Channel)$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func resolveExpectedTitleArtist(rawTitle: String, rawArtist: String) -> (title: String, artist: String) {
+        let baseTitle = cleanTitle(rawTitle)
+        let baseArtist = cleanArtist(rawArtist)
+        if baseTitle.contains(" - ") {
+            let parts = baseTitle.components(separatedBy: " - ")
+            if parts.count >= 2 {
+                let left = cleanArtist(parts[0])
+                let right = cleanTitle(parts[1...].joined(separator: " - "))
+                if !left.isEmpty && !right.isEmpty {
+                    let normRawArt = baseArtist.lowercased()
+                    if normRawArt == right.lowercased() || (!normRawArt.isEmpty && right.lowercased().contains(normRawArt)) {
+                        return (cleanTitle(parts[0]), right)
+                    }
+                    return (right, left)
+                }
+            }
+        }
+        if let jpMatch = rawTitle.range(of: #"^([^「『]+)[「『]([^」』]+)[」』]"#, options: .regularExpression) {
+            let full = String(rawTitle[jpMatch])
+            if let openIdx = full.firstIndex(where: { $0 == "「" || $0 == "『" }),
+               let closeIdx = full.lastIndex(where: { $0 == "」" || $0 == "』" }) {
+                let artPart = cleanArtist(String(full[..<openIdx]))
+                let titPart = cleanTitle(String(full[full.index(after: openIdx)..<closeIdx]))
+                if !titPart.isEmpty {
+                    return (titPart, artPart.isEmpty ? baseArtist : artPart)
+                }
+            }
+        }
+        return (baseTitle, baseArtist)
     }
 
     func stripFeaturing(_ text: String) -> String {
         let noFeat = text.replacingOccurrences(
-            of: #"\s*[\(\[]?\s*(feat\.?|ft\.?|featuring|with)\s+[^\)\]]+[\)\]]?"#,
+            of: #"\s*[\(\[]?\s*(feat\.?|ft\.?|featuring|with|prod\.?\s*by)\s+[^\)\]]+[\)\]]?"#,
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
         return noFeat.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Concurrently queries LRCLIB (exact w/ duration + search) & NetEase (word-timed YRC + LRC),
-    /// then selects the candidate with the closest song duration and highest timing granularity.
+    /// Checks instant memory & persistent disk cache (< 1ms) first; on miss, cancels stale tasks,
+    /// concurrently races LRCLIB + NetEase YRC with progressive early emission, and normalizes messy
+    /// metadata via iTunes Search fallback when needed.
     func fetchLyrics(
         cacheKey: String,
         rawTitle: String,
         rawArtist: String,
+        album: String = "",
         duration: TimeInterval,
+        forceRefresh: Bool = false,
         completion: @escaping (FetchedLyricsResult) -> Void
     ) {
-        if let hit = cache[cacheKey] {
-            completion(hit)
-            return
+        let token = UUID()
+        cancelStaleTasks(keeping: token)
+
+        let fuzzyKey = fuzzyCacheKey(rawTitle: rawTitle, rawArtist: rawArtist)
+        if !forceRefresh {
+            cacheLock.lock()
+            let memHit = cache[cacheKey]
+            cacheLock.unlock()
+            if let hit = memHit {
+                completion(hit)
+                return
+            }
+
+            if let diskHit = diskCache.load(cacheKey: cacheKey, fuzzyKey: fuzzyKey, targetDuration: duration) {
+                cacheLock.lock()
+                cache[cacheKey] = diskHit
+                cacheLock.unlock()
+                completion(diskHit)
+                return
+            }
         }
 
-        let titleHint = cleanTitle(rawTitle)
-        let artistHint = cleanArtist(rawArtist)
+        let resolvedHints = resolveExpectedTitleArtist(rawTitle: rawTitle, rawArtist: rawArtist)
+        let titleHint = resolvedHints.title
+        let artistHint = resolvedHints.artist
         let candidates = buildQueryCandidates(rawTitle: rawTitle, rawArtist: rawArtist)
 
-        let group = DispatchGroup()
-        let lock = NSLock()
+        let stateLock = NSLock()
+        let coordGroup = DispatchGroup()
         var pool: [RankedCandidate] = []
+        var emittedScore: Double = -999
+        var emittedHasWordTimings = false
+        var finalizedBest = false
+        let searchStart = Date()
+        var firstSyncedHitAt: Date?
 
-        func collect(_ item: RankedCandidate?) {
-            guard let item = item, !item.lines.isEmpty else { return }
-            lock.lock()
-            pool.append(item)
-            lock.unlock()
+        func commitToCacheAndEmit(_ cand: RankedCandidate) {
+            guard isTokenCurrent(token) else { return }
+            let result = self.finalizeResult(
+                lines: cand.lines,
+                sourceName: cand.sourceName,
+                isEstimated: cand.isEstimated,
+                hasWordTimings: cand.hasWordTimings,
+                referenceDuration: cand.referenceDuration,
+                titleHint: titleHint,
+                artistHint: artistHint
+            )
+            self.cacheLock.lock()
+            self.cache[cacheKey] = result
+            self.cacheLock.unlock()
+            if !cand.isEstimated || cand.matchScore >= 15.0 {
+                self.diskCache.save(result, cacheKey: cacheKey, fuzzyKey: fuzzyKey)
+            }
+            completion(result)
         }
 
-        group.enter()
-        fetchLRCLIBCandidates(candidates: candidates, expectedTitle: titleHint, expectedArtist: artistHint, targetDuration: duration) { items in
-            items.forEach { collect($0) }
-            group.leave()
+        func ingest(_ items: [RankedCandidate]) {
+            guard !items.isEmpty, isTokenCurrent(token) else { return }
+            var immediateEmit: RankedCandidate?
+
+            stateLock.lock()
+            pool.append(contentsOf: items)
+            let validSynced = pool.filter { !$0.isEstimated && $0.matchScore >= 65.0 }
+            if !validSynced.isEmpty && firstSyncedHitAt == nil {
+                firstSyncedHitAt = Date()
+            }
+            if let best = validSynced.max(by: { $0.matchScore < $1.matchScore }) {
+                if !finalizedBest {
+                    let isInstantExact = (best.matchScore >= 145.0 && (best.hasWordTimings || Date().timeIntervalSince(searchStart) >= 0.45))
+                    if isInstantExact {
+                        emittedScore = best.matchScore
+                        emittedHasWordTimings = best.hasWordTimings
+                        immediateEmit = best
+                    }
+                } else if best.hasWordTimings && !emittedHasWordTimings && best.matchScore >= emittedScore - 8.0 {
+                    // Seamless upgrade from fast LRC to per-word YRC once it lands for the same track
+                    emittedScore = best.matchScore
+                    emittedHasWordTimings = true
+                    immediateEmit = best
+                } else if best.matchScore > emittedScore + 20.0 {
+                    emittedScore = best.matchScore
+                    emittedHasWordTimings = best.hasWordTimings
+                    immediateEmit = best
+                }
+            }
+            stateLock.unlock()
+
+            if let hit = immediateEmit {
+                commitToCacheAndEmit(hit)
+            }
         }
 
-        group.enter()
-        fetchNetEaseCandidates(candidates: candidates, expectedTitle: titleHint, expectedArtist: artistHint, targetDuration: duration) { items in
-            items.forEach { collect($0) }
-            group.leave()
-        }
+        coordGroup.enter()
+        fetchLRCLIBCandidates(
+            token: token,
+            candidates: candidates,
+            album: album,
+            rawTitle: rawTitle,
+            expectedTitle: titleHint,
+            expectedArtist: artistHint,
+            targetDuration: duration,
+            onBatch: { batch in ingest(batch) },
+            completion: { coordGroup.leave() }
+        )
+
+        coordGroup.enter()
+        fetchNetEaseCandidates(
+            token: token,
+            candidates: candidates,
+            rawTitle: rawTitle,
+            expectedTitle: titleHint,
+            expectedArtist: artistHint,
+            targetDuration: duration,
+            onBatch: { batch in ingest(batch) },
+            completion: { coordGroup.leave() }
+        )
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            _ = group.wait(timeout: .now() + 5.5)
-            guard let self = self else { return }
-
-            lock.lock()
-            let picked = pool.max(by: { $0.matchScore < $1.matchScore })
-            lock.unlock()
-
-            if let best = picked, (!best.isEstimated || pool.count > 0) {
-                if !best.isEstimated {
-                    let result = self.finalizeResult(
-                        lines: best.lines,
-                        sourceName: best.sourceName,
-                        isEstimated: false,
-                        hasWordTimings: best.hasWordTimings,
-                        referenceDuration: best.referenceDuration,
-                        titleHint: titleHint,
-                        artistHint: artistHint
-                    )
-                    self.cache[cacheKey] = result
-                    completion(result)
-                    return
+            // Smart responsive wait: emit in <= 0.45s after first confident synced hit instead of blocking 3.8s
+            let hardDeadline = Date().addingTimeInterval(2.5)
+            while Date() < hardDeadline && self?.isTokenCurrent(token) == true {
+                if coordGroup.wait(timeout: .now() + 0.08) == .success {
+                    break
+                }
+                stateLock.lock()
+                let earlyHitTime = firstSyncedHitAt
+                let alreadyEmitted = (emittedScore >= 65.0)
+                stateLock.unlock()
+                if alreadyEmitted { break }
+                if let hitTime = earlyHitTime, Date().timeIntervalSince(hitTime) >= 0.45 {
+                    break
                 }
             }
 
-            // Tier 3 plain lyrics fallback if synced search yielded nothing
-            self.tryLyricsOVH(candidates: candidates, targetDuration: duration) { ovhCand in
-                let finalCand = picked ?? ovhCand
-                if let c = finalCand {
-                    let result = self.finalizeResult(
-                        lines: c.lines,
-                        sourceName: c.sourceName,
-                        isEstimated: c.isEstimated,
-                        hasWordTimings: c.hasWordTimings,
-                        referenceDuration: c.referenceDuration,
-                        titleHint: titleHint,
-                        artistHint: artistHint
-                    )
-                    self.cache[cacheKey] = result
-                    completion(result)
+            guard let self = self, self.isTokenCurrent(token) else { return }
+
+            stateLock.lock()
+            finalizedBest = true
+            let validSynced = pool.filter { !$0.isEstimated && $0.matchScore >= 65.0 }
+            let pickedSynced = validSynced.max(by: { $0.matchScore < $1.matchScore })
+            let pickedEstimated = pool.filter { $0.matchScore >= 15.0 }.max(by: { $0.matchScore < $1.matchScore })
+            let alreadySentScore = emittedScore
+            stateLock.unlock()
+
+            if let best = pickedSynced {
+                if best.matchScore > alreadySentScore + 0.5 {
+                    commitToCacheAndEmit(best)
+                }
+                return
+            }
+
+            // Tier 2B: Canonical iTunes Search metadata repair + second rapid LRCLIB lookup + Lyrics.ovh
+            self.recoverViaCanonicalMetadataAndPlainFallback(
+                token: token,
+                candidates: candidates,
+                rawTitle: rawTitle,
+                expectedTitle: titleHint,
+                expectedArtist: artistHint,
+                targetDuration: duration,
+                existingEstimated: pickedEstimated
+            ) { recovered in
+                guard self.isTokenCurrent(token) else { return }
+                if let finalCand = recovered {
+                    commitToCacheAndEmit(finalCand)
                 } else {
                     let empty = FetchedLyricsResult(
                         lines: [],
@@ -317,16 +702,19 @@ final class LyricsParserAndFetcher {
                         hasWordTimings: false,
                         referenceDuration: duration
                     )
+                    self.cacheLock.lock()
                     self.cache[cacheKey] = empty
+                    self.cacheLock.unlock()
                     completion(empty)
                 }
             }
         }
     }
 
-    private func buildQueryCandidates(rawTitle: String, rawArtist: String) -> [(track: String, artist: String)] {
+    func buildQueryCandidates(rawTitle: String, rawArtist: String) -> [(track: String, artist: String)] {
         let baseTitle = cleanTitle(rawTitle)
         let baseArtist = cleanArtist(rawArtist)
+        let fullCollabArtist = cleanArtistFull(rawArtist)
         var pairs: [(String, String)] = []
 
         func addPair(_ t: String, _ a: String) {
@@ -338,6 +726,19 @@ final class LyricsParserAndFetcher {
             }
         }
 
+        if let jpMatch = rawTitle.range(of: #"^([^「『]+)[「『]([^」』]+)[」』]"#, options: .regularExpression) {
+            let full = String(rawTitle[jpMatch])
+            if let openIdx = full.firstIndex(where: { $0 == "「" || $0 == "『" }),
+               let closeIdx = full.lastIndex(where: { $0 == "」" || $0 == "』" }) {
+                let artPart = cleanArtist(String(full[..<openIdx]))
+                let titPart = cleanTitle(String(full[full.index(after: openIdx)..<closeIdx]))
+                if !titPart.isEmpty {
+                    addPair(titPart, artPart.isEmpty ? baseArtist : artPart)
+                    addPair(titPart, "")
+                }
+            }
+        }
+
         if baseTitle.contains(" - ") {
             let parts = baseTitle.components(separatedBy: " - ")
             if parts.count >= 2 {
@@ -345,12 +746,28 @@ final class LyricsParserAndFetcher {
                 let right = cleanTitle(parts[1...].joined(separator: " - "))
                 addPair(right, left)
                 addPair(stripFeaturing(right), left)
+                if !baseArtist.isEmpty && baseArtist.caseInsensitiveCompare(left) != .orderedSame {
+                    addPair(right, baseArtist)
+                }
                 addPair(left, right)
+                addPair(right, "")
             }
         }
 
         addPair(baseTitle, baseArtist)
+        if !fullCollabArtist.isEmpty && fullCollabArtist != baseArtist {
+            addPair(baseTitle, fullCollabArtist)
+        }
         addPair(stripFeaturing(baseTitle), baseArtist)
+
+        if TextRomanizer.needsRomanization(baseTitle) {
+            let romT = TextRomanizer.romanize(baseTitle, preferJapanese: TextRomanizer.containsJapaneseKana(baseTitle))
+            let romA = TextRomanizer.needsRomanization(baseArtist)
+                ? TextRomanizer.romanize(baseArtist, preferJapanese: TextRomanizer.containsJapaneseKana(baseArtist))
+                : baseArtist
+            addPair(romT, romA)
+        }
+
         if !baseArtist.isEmpty {
             addPair(baseTitle, "")
             addPair(stripFeaturing(baseTitle), "")
@@ -359,311 +776,397 @@ final class LyricsParserAndFetcher {
         return pairs
     }
 
-    private static func scoreCandidate(
+    private static func normalizedTokens(_ text: String) -> Set<String> {
+        let lower = text.lowercased()
+            .replacingOccurrences(of: #"[^\p{L}\p{N}\s]"#, with: " ", options: .regularExpression)
+        let parts = lower.split(separator: " ").map { String($0) }.filter { !$0.isEmpty }
+        var set = Set(parts)
+        // Cross-script romanized expansion so "夜に駆ける" matches "Yoru ni Kakeru"
+        if TextRomanizer.needsRomanization(text) {
+            let rom = TextRomanizer.romanize(text, preferJapanese: TextRomanizer.containsJapaneseKana(text))
+                .lowercased()
+                .replacingOccurrences(of: #"[^\p{L}\p{N}\s]"#, with: " ", options: .regularExpression)
+            for p in rom.split(separator: " ") where !p.isEmpty {
+                set.insert(String(p))
+            }
+        }
+        return set
+    }
+
+    private static func lineCoveragePenalty(lines: [LyricLine], targetDuration: TimeInterval) -> Double {
+        guard !lines.isEmpty else { return -100.0 }
+        if lines.count < 4 && targetDuration > 35 {
+            // Stub placeholder like "[00:00.00]Instrumental"
+            return -85.0
+        }
+        if targetDuration > 40, let lastTime = lines.last?.time {
+            if lastTime > targetDuration + 18.0 {
+                return -48.0
+            }
+            if lastTime < targetDuration * 0.25 {
+                return -42.0
+            }
+        }
+        return 0.0
+    }
+
+    static func scoreCandidate(
         trackName: String,
         artistName: String,
+        rawInputTitle: String,
         expectedTitle: String,
         expectedArtist: String,
         refDuration: TimeInterval,
         targetDuration: TimeInterval,
         hasSynced: Bool,
-        hasWordTimings: Bool
+        hasWordTimings: Bool,
+        parsedLines: [LyricLine]? = nil
     ) -> Double {
         var score: Double = hasSynced ? 100.0 : 20.0
         if hasWordTimings {
-            score += 28.0
+            score += 26.0
         }
 
-        // Strict duration accuracy scoring so remixes/wrong edits never hijack the lyrics
+        // 1. Duration accuracy scoring
         if targetDuration > 20 && refDuration > 20 {
             let diff = abs(refDuration - targetDuration)
             if diff <= 1.5 {
-                score += 30.0
+                score += 34.0
             } else if diff <= 3.5 {
-                score += 20.0 - (diff - 1.5) * 4.0
+                score += 24.0 - (diff - 1.5) * 4.5
             } else if diff <= 8.0 {
                 score += 8.0 - diff * 2.5
             } else {
-                score -= min(90.0, diff * 3.5)
+                score -= min(95.0, diff * 3.8)
             }
         }
 
-        let normTrack = trackName.lowercased()
-        let normExpTitle = expectedTitle.lowercased()
+        // 2. Cross-script Title similarity (handles Latin <-> Japanese/Korean/Mandarin!)
+        let normTrack = trackName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normExpTitle = expectedTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normRawAll = rawInputTitle.lowercased()
         if !normExpTitle.isEmpty {
+            let tTokens = normalizedTokens(normTrack)
+            let eTokens = normalizedTokens(normExpTitle)
+            let rawTokens = normalizedTokens(normRawAll)
+            let overlap = max(tTokens.intersection(eTokens).count, tTokens.intersection(rawTokens).count)
+            let unionCount = max(1, tTokens.union(eTokens).count)
+            let jaccard = Double(overlap) / Double(unionCount)
+
             if normTrack == normExpTitle {
-                score += 18.0
-            } else if normTrack.contains(normExpTitle) || normExpTitle.contains(normTrack) {
-                score += 10.0
+                score += 34.0
+            } else if normTrack.contains(normExpTitle) || normExpTitle.contains(normTrack) || (!normTrack.isEmpty && normRawAll.contains(normTrack)) {
+                score += 20.0
+            } else if jaccard >= 0.42 {
+                score += 18.0 * jaccard
+            } else if overlap >= 2 && overlap >= min(tTokens.count, eTokens.count) {
+                score += 12.0
+            } else if overlap == 0 {
+                // Zero title token match must never accept an unrelated track even if artist/duration aligns
+                score -= 125.0
             } else {
-                score -= 12.0
+                score -= 72.0
             }
         }
 
-        let normArtist = artistName.lowercased()
-        let normExpArtist = expectedArtist.lowercased()
-        if !normExpArtist.isEmpty && !normArtist.isEmpty {
-            if normArtist == normExpArtist || normArtist.contains(normExpArtist) || normExpArtist.contains(normArtist) {
-                score += 16.0
-            } else {
-                score -= 22.0
+        // 3. Cross-script Artist matching (supports YouTube "Artist - Title" & channel mismatch tolerance)
+        let normArtist = artistName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normExpArtist = expectedArtist.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normArtist.isEmpty {
+            let aTokens = normalizedTokens(normArtist)
+            let eTokens = normalizedTokens(normExpArtist)
+            let rawTitleTokens = normalizedTokens(normRawAll)
+            let aOverlap = !eTokens.isEmpty && !aTokens.intersection(eTokens).isEmpty
+            let inRawTitle = !aTokens.isEmpty && aTokens.isSubset(of: rawTitleTokens)
+
+            if !normExpArtist.isEmpty && (normArtist == normExpArtist || normArtist.contains(normExpArtist) || normExpArtist.contains(normArtist) || aOverlap) {
+                score += 30.0
+            } else if inRawTitle || normRawAll.contains(normArtist) {
+                score += 26.0
+            } else if !normExpArtist.isEmpty {
+                score -= 46.0
             }
         }
+
+        // 4. Reject unwanted remix / live / cover / sped-up / instrumental variants unless requested
+        let variantTags = ["remix", "live", "cover", "karaoke", "instrumental", "sped up", "slowed", "nightcore", "acoustic", "8d", "lofi", "lo-fi", "tribute", "piano version", "guitar version"]
+        for tag in variantTags {
+            let inCandidate = normTrack.contains(tag)
+            let requested = normRawAll.contains(tag) || normExpArtist.contains(tag)
+            if inCandidate && !requested {
+                score -= 58.0
+                break
+            }
+        }
+
+        // 5. Lyric line count & timestamp coverage check
+        if let lines = parsedLines, hasSynced {
+            score += lineCoveragePenalty(lines: lines, targetDuration: targetDuration)
+        }
+
         return score
     }
 
-    // MARK: - Tier 1: LRCLIB (Duration-Matched)
+    // MARK: - Tier 1: LRCLIB (Exact /get + Field /search + Full-Text ?q=)
+
+    private func decodeLRCLIBItem(
+        _ item: [String: Any],
+        fallbackTrack: String,
+        fallbackArtist: String,
+        rawTitle: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        targetDuration: TimeInterval
+    ) -> RankedCandidate? {
+        let refDur = (item["duration"] as? Double) ?? targetDuration
+        let trName = (item["trackName"] as? String) ?? fallbackTrack
+        let arName = (item["artistName"] as? String) ?? fallbackArtist
+        if let synced = item["syncedLyrics"] as? String, !synced.isEmpty {
+            let parsed = Self.parseLRCWithMeta(synced)
+            guard !parsed.lines.isEmpty else { return nil }
+            let sc = Self.scoreCandidate(
+                trackName: trName, artistName: arName,
+                rawInputTitle: rawTitle,
+                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
+                refDuration: refDur, targetDuration: targetDuration,
+                hasSynced: true, hasWordTimings: parsed.hasWordTimings,
+                parsedLines: parsed.lines
+            )
+            return RankedCandidate(
+                lines: parsed.lines,
+                sourceName: parsed.hasWordTimings ? "LRCLIB (Kata)" : "LRCLIB",
+                isEstimated: false,
+                hasWordTimings: parsed.hasWordTimings,
+                referenceDuration: refDur,
+                matchScore: sc
+            )
+        } else if let plain = item["plainLyrics"] as? String, !plain.isEmpty {
+            let est = Self.distributePlainLyrics(plain, duration: max(60, refDur))
+            let sc = Self.scoreCandidate(
+                trackName: trName, artistName: arName,
+                rawInputTitle: rawTitle,
+                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
+                refDuration: refDur, targetDuration: targetDuration,
+                hasSynced: false, hasWordTimings: false
+            )
+            return RankedCandidate(
+                lines: est,
+                sourceName: "LRCLIB (Estimasi)",
+                isEstimated: true,
+                hasWordTimings: false,
+                referenceDuration: refDur,
+                matchScore: sc
+            )
+        }
+        return nil
+    }
 
     private func fetchLRCLIBCandidates(
+        token: UUID,
         candidates: [(track: String, artist: String)],
+        album: String,
+        rawTitle: String,
         expectedTitle: String,
         expectedArtist: String,
         targetDuration: TimeInterval,
-        completion: @escaping ([RankedCandidate]) -> Void
+        onBatch: @escaping ([RankedCandidate]) -> Void,
+        completion: @escaping () -> Void
     ) {
         let localGroup = DispatchGroup()
-        let lock = NSLock()
-        var results: [RankedCandidate] = []
 
-        // 1A. Exact match including duration parameter
         if let first = candidates.first,
            !first.artist.isEmpty,
            let tEnc = first.track.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let aEnc = first.artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             let durParam = targetDuration > 15 ? "&duration=\(Int(round(targetDuration)))" : ""
-            if let url = URL(string: "https://lrclib.net/api/get?track_name=\(tEnc)&artist_name=\(aEnc)\(durParam)") {
+            let cleanAlb = album.trimmingCharacters(in: .whitespacesAndNewlines)
+            let albParam = (!cleanAlb.isEmpty ? (cleanAlb.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).map { "&album_name=\($0)" } ?? "") : "")
+            if let url = URL(string: "https://lrclib.net/api/get?track_name=\(tEnc)&artist_name=\(aEnc)\(albParam)\(durParam)") {
                 localGroup.enter()
-                URLSession.shared.dataTask(with: url) { data, _, _ in
+                startManagedTask(url: url, token: token) { [weak self] data, _, _ in
                     defer { localGroup.leave() }
-                    guard let data = data,
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-                    let refDur = (json["duration"] as? Double) ?? targetDuration
-                    let trName = (json["trackName"] as? String) ?? first.track
-                    let arName = (json["artistName"] as? String) ?? first.artist
-                    if let synced = json["syncedLyrics"] as? String, !synced.isEmpty {
-                        let parsed = Self.parseLRCWithMeta(synced)
-                        if !parsed.lines.isEmpty {
-                            let sc = Self.scoreCandidate(
-                                trackName: trName, artistName: arName,
-                                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                                refDuration: refDur, targetDuration: targetDuration,
-                                hasSynced: true, hasWordTimings: parsed.hasWordTimings
-                            )
-                            lock.lock()
-                            results.append(RankedCandidate(
-                                lines: parsed.lines,
-                                sourceName: parsed.hasWordTimings ? "LRCLIB (Kata)" : "LRCLIB",
-                                isEstimated: false,
-                                hasWordTimings: parsed.hasWordTimings,
-                                referenceDuration: refDur,
-                                matchScore: sc
-                            ))
-                            lock.unlock()
-                        }
-                    } else if let plain = json["plainLyrics"] as? String, !plain.isEmpty {
-                        let est = Self.distributePlainLyrics(plain, duration: max(60, refDur))
-                        let sc = Self.scoreCandidate(
-                            trackName: trName, artistName: arName,
-                            expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                            refDuration: refDur, targetDuration: targetDuration,
-                            hasSynced: false, hasWordTimings: false
-                        )
-                        lock.lock()
-                        results.append(RankedCandidate(
-                            lines: est,
-                            sourceName: "LRCLIB (Estimasi)",
-                            isEstimated: true,
-                            hasWordTimings: false,
-                            referenceDuration: refDur,
-                            matchScore: sc
-                        ))
-                        lock.unlock()
-                    }
-                }.resume()
+                    guard let self = self, let data = data,
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let cand = self.decodeLRCLIBItem(json, fallbackTrack: first.track, fallbackArtist: first.artist, rawTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, targetDuration: targetDuration) else { return }
+                    onBatch([cand])
+                }
             }
         }
 
-        // 1B. Search top 2 query candidates
-        for cand in candidates.prefix(2) {
-            let q = cand.artist.isEmpty ? cand.track : "\(cand.track) \(cand.artist)"
-            guard let qEnc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                  let url = URL(string: "https://lrclib.net/api/search?q=\(qEnc)") else { continue }
-            localGroup.enter()
-            URLSession.shared.dataTask(with: url) { data, _, _ in
-                defer { localGroup.leave() }
-                guard let data = data,
-                      let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-                for item in arr.prefix(8) {
-                    let refDur = (item["duration"] as? Double) ?? targetDuration
-                    let trName = (item["trackName"] as? String) ?? ""
-                    let arName = (item["artistName"] as? String) ?? ""
-                    if let synced = item["syncedLyrics"] as? String, !synced.isEmpty {
-                        let parsed = Self.parseLRCWithMeta(synced)
-                        if !parsed.lines.isEmpty {
-                            let sc = Self.scoreCandidate(
-                                trackName: trName, artistName: arName,
-                                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                                refDuration: refDur, targetDuration: targetDuration,
-                                hasSynced: true, hasWordTimings: parsed.hasWordTimings
-                            )
-                            lock.lock()
-                            results.append(RankedCandidate(
-                                lines: parsed.lines,
-                                sourceName: parsed.hasWordTimings ? "LRCLIB (Kata)" : "LRCLIB",
-                                isEstimated: false,
-                                hasWordTimings: parsed.hasWordTimings,
-                                referenceDuration: refDur,
-                                matchScore: sc
-                            ))
-                            lock.unlock()
-                        }
-                    } else if let plain = item["plainLyrics"] as? String, !plain.isEmpty {
-                        let est = Self.distributePlainLyrics(plain, duration: max(60, refDur))
-                        let sc = Self.scoreCandidate(
-                            trackName: trName, artistName: arName,
-                            expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                            refDuration: refDur, targetDuration: targetDuration,
-                            hasSynced: false, hasWordTimings: false
-                        )
-                        lock.lock()
-                        results.append(RankedCandidate(
-                            lines: est,
-                            sourceName: "LRCLIB (Estimasi)",
-                            isEstimated: true,
-                            hasWordTimings: false,
-                            referenceDuration: refDur,
-                            matchScore: sc
-                        ))
-                        lock.unlock()
-                    }
-                }
-            }.resume()
+        var builtURLs: [URL] = []
+        func appendURL(_ url: URL?) {
+            guard let url = url, !builtURLs.contains(url) else { return }
+            builtURLs.append(url)
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = localGroup.wait(timeout: .now() + 4.5)
-            completion(results)
+        if let first = candidates.first {
+            if !first.artist.isEmpty,
+               let tEnc = first.track.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let aEnc = first.artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                appendURL(URL(string: "https://lrclib.net/api/search?track_name=\(tEnc)&artist_name=\(aEnc)"))
+            }
+            let combined = first.artist.isEmpty ? first.track : "\(first.track) \(first.artist)"
+            if let qEnc = combined.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                appendURL(URL(string: "https://lrclib.net/api/search?q=\(qEnc)"))
+            }
+        }
+
+        for cand in candidates.dropFirst().prefix(3) {
+            let q = cand.artist.isEmpty ? cand.track : "\(cand.track) \(cand.artist)"
+            if let qEnc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                appendURL(URL(string: "https://lrclib.net/api/search?q=\(qEnc)"))
+            }
+        }
+
+        for url in builtURLs.prefix(4) {
+            localGroup.enter()
+            startManagedTask(url: url, token: token) { [weak self] data, _, _ in
+                defer { localGroup.leave() }
+                guard let self = self, let data = data,
+                      let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+                let items = arr.prefix(10).compactMap {
+                    self.decodeLRCLIBItem($0, fallbackTrack: expectedTitle, fallbackArtist: expectedArtist, rawTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, targetDuration: targetDuration)
+                }
+                if !items.isEmpty { onBatch(items) }
+            }
+        }
+
+        localGroup.notify(queue: DispatchQueue.global(qos: .userInitiated)) {
+            completion()
         }
     }
 
-    // MARK: - Tier 2: NetEase Cloud Music (YRC Word-Timing + LRC)
+    // MARK: - Tier 2: NetEase Cloud Music (Multi-Candidate YRC Word-Timing + LRC)
 
     private func fetchNetEaseCandidates(
+        token: UUID,
         candidates: [(track: String, artist: String)],
+        rawTitle: String,
         expectedTitle: String,
         expectedArtist: String,
         targetDuration: TimeInterval,
-        completion: @escaping ([RankedCandidate]) -> Void
+        onBatch: @escaping ([RankedCandidate]) -> Void,
+        completion: @escaping () -> Void
     ) {
-        guard let cand = candidates.first else {
-            completion([])
-            return
-        }
-        let q = cand.artist.isEmpty ? cand.track : "\(cand.track) \(cand.artist)"
-        guard let qEnc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let searchURL = URL(string: "https://music.163.com/api/search/get?s=\(qEnc)&type=1&limit=5") else {
-            completion([])
+        let queries = Array(candidates.prefix(2))
+        guard !queries.isEmpty else {
+            completion()
             return
         }
 
-        var req = URLRequest(url: searchURL, timeoutInterval: 4.5)
-        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let outerGroup = DispatchGroup()
+        let seenLock = NSLock()
+        var seenSongIDs = Set<Int>()
 
-        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-            guard let self = self,
-                  let data = data,
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let res = root["result"] as? [String: Any],
-                  let songs = res["songs"] as? [[String: Any]], !songs.isEmpty else {
-                completion([])
-                return
+        for cand in queries {
+            let q = cand.artist.isEmpty ? cand.track : "\(cand.track) \(cand.artist)"
+            guard let qEnc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let searchURL = URL(string: "https://music.163.com/api/search/get?s=\(qEnc)&type=1&limit=8") else {
+                continue
             }
 
-            // Pick top 2 duration/artist-compatible candidates to inspect YRC + LRC
-            let sortedSongs = songs.sorted { a, b in
-                let da = targetDuration > 15 ? abs(((a["duration"] as? Double ?? 0) / 1000.0) - targetDuration) : 0
-                let db = targetDuration > 15 ? abs(((b["duration"] as? Double ?? 0) / 1000.0) - targetDuration) : 0
-                return da < db
-            }.prefix(2)
+            outerGroup.enter()
+            startManagedTask(url: searchURL, token: token, headers: ["User-Agent": "Mozilla/5.0"]) { [weak self] data, _, _ in
+                guard let self = self,
+                      let data = data,
+                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let res = root["result"] as? [String: Any],
+                      let songs = res["songs"] as? [[String: Any]], !songs.isEmpty else {
+                    outerGroup.leave()
+                    return
+                }
 
-            let localGroup = DispatchGroup()
-            let lock = NSLock()
-            var out: [RankedCandidate] = []
+                let topSongs = songs.sorted { a, b in
+                    let durA = (a["duration"] as? Double ?? 0) / 1000.0
+                    let durB = (b["duration"] as? Double ?? 0) / 1000.0
+                    let nameA = (a["name"] as? String) ?? ""
+                    let nameB = (b["name"] as? String) ?? ""
+                    let artA = ((a["artists"] as? [[String: Any]])?.first?["name"] as? String) ?? ""
+                    let artB = ((b["artists"] as? [[String: Any]])?.first?["name"] as? String) ?? ""
+                    let sA = Self.scoreCandidate(trackName: nameA, artistName: artA, rawInputTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, refDuration: durA, targetDuration: targetDuration, hasSynced: true, hasWordTimings: false)
+                    let sB = Self.scoreCandidate(trackName: nameB, artistName: artB, rawInputTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, refDuration: durB, targetDuration: targetDuration, hasSynced: true, hasWordTimings: false)
+                    return sA > sB
+                }.prefix(3)
 
-            for song in sortedSongs {
-                guard let songID = song["id"] as? Int else { continue }
-                let sName = (song["name"] as? String) ?? ""
-                let artistsArr = song["artists"] as? [[String: Any]]
-                let sArtist = (artistsArr?.first?["name"] as? String) ?? ""
-                let sDur = (song["duration"] as? Double ?? 0) / 1000.0
-                let refDur = sDur > 10 ? sDur : targetDuration
+                for song in topSongs {
+                    guard let songID = song["id"] as? Int else { continue }
+                    seenLock.lock()
+                    let isNew = seenSongIDs.insert(songID).inserted
+                    seenLock.unlock()
+                    guard isNew else { continue }
 
-                localGroup.enter()
-                self.fetchNetEaseLyricPayload(songID: songID) { yrcStr, lrcStr in
-                    defer { localGroup.leave() }
+                    let sName = (song["name"] as? String) ?? ""
+                    let artistsArr = song["artists"] as? [[String: Any]]
+                    let sArtist = (artistsArr?.first?["name"] as? String) ?? ""
+                    let sDur = (song["duration"] as? Double ?? 0) / 1000.0
+                    let refDur = sDur > 10 ? sDur : targetDuration
 
-                    if let yrc = yrcStr, !yrc.isEmpty {
-                        let yrcLines = Self.parseYRC(yrc)
-                        if !yrcLines.isEmpty {
-                            let sc = Self.scoreCandidate(
-                                trackName: sName, artistName: sArtist,
-                                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                                refDuration: refDur, targetDuration: targetDuration,
-                                hasSynced: true, hasWordTimings: true
-                            )
-                            lock.lock()
-                            out.append(RankedCandidate(
-                                lines: yrcLines,
-                                sourceName: "NetEase YRC (Per Kata)",
-                                isEstimated: false,
-                                hasWordTimings: true,
-                                referenceDuration: refDur,
-                                matchScore: sc
-                            ))
-                            lock.unlock()
+                    outerGroup.enter()
+                    self.fetchNetEaseLyricPayload(songID: songID, token: token) { yrcStr, lrcStr in
+                        defer { outerGroup.leave() }
+                        var localItems: [RankedCandidate] = []
+
+                        if let yrc = yrcStr, !yrc.isEmpty {
+                            let yrcLines = Self.parseYRC(yrc)
+                            if !yrcLines.isEmpty {
+                                let sc = Self.scoreCandidate(
+                                    trackName: sName, artistName: sArtist,
+                                    rawInputTitle: rawTitle,
+                                    expectedTitle: expectedTitle, expectedArtist: expectedArtist,
+                                    refDuration: refDur, targetDuration: targetDuration,
+                                    hasSynced: true, hasWordTimings: true,
+                                    parsedLines: yrcLines
+                                )
+                                localItems.append(RankedCandidate(
+                                    lines: yrcLines,
+                                    sourceName: "NetEase YRC (Per Kata)",
+                                    isEstimated: false,
+                                    hasWordTimings: true,
+                                    referenceDuration: refDur,
+                                    matchScore: sc
+                                ))
+                            }
                         }
-                    }
 
-                    if let lrc = lrcStr, !lrc.isEmpty {
-                        let parsed = Self.parseLRCWithMeta(lrc)
-                        if !parsed.lines.isEmpty {
-                            let sc = Self.scoreCandidate(
-                                trackName: sName, artistName: sArtist,
-                                expectedTitle: expectedTitle, expectedArtist: expectedArtist,
-                                refDuration: refDur, targetDuration: targetDuration,
-                                hasSynced: true, hasWordTimings: parsed.hasWordTimings
-                            )
-                            lock.lock()
-                            out.append(RankedCandidate(
-                                lines: parsed.lines,
-                                sourceName: "NetEase LRC",
-                                isEstimated: false,
-                                hasWordTimings: parsed.hasWordTimings,
-                                referenceDuration: refDur,
-                                matchScore: sc
-                            ))
-                            lock.unlock()
+                        if let lrc = lrcStr, !lrc.isEmpty {
+                            let parsed = Self.parseLRCWithMeta(lrc)
+                            if !parsed.lines.isEmpty {
+                                let sc = Self.scoreCandidate(
+                                    trackName: sName, artistName: sArtist,
+                                    rawInputTitle: rawTitle,
+                                    expectedTitle: expectedTitle, expectedArtist: expectedArtist,
+                                    refDuration: refDur, targetDuration: targetDuration,
+                                    hasSynced: true, hasWordTimings: parsed.hasWordTimings,
+                                    parsedLines: parsed.lines
+                                )
+                                localItems.append(RankedCandidate(
+                                    lines: parsed.lines,
+                                    sourceName: "NetEase LRC",
+                                    isEstimated: false,
+                                    hasWordTimings: parsed.hasWordTimings,
+                                    referenceDuration: refDur,
+                                    matchScore: sc
+                                ))
+                            }
                         }
+                        if !localItems.isEmpty { onBatch(localItems) }
                     }
                 }
+                outerGroup.leave()
             }
+        }
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = localGroup.wait(timeout: .now() + 4.0)
-                completion(out)
-            }
-        }.resume()
+        outerGroup.notify(queue: DispatchQueue.global(qos: .userInitiated)) {
+            completion()
+        }
     }
 
-    private func fetchNetEaseLyricPayload(songID: Int, completion: @escaping (String?, String?) -> Void) {
+    private func fetchNetEaseLyricPayload(songID: Int, token: UUID, completion: @escaping (String?, String?) -> Void) {
         guard let url = URL(string: "https://music.163.com/api/song/lyric?os=pc&id=\(songID)&lv=-1&yv=-1") else {
             completion(nil, nil)
             return
         }
-        var req = URLRequest(url: url, timeoutInterval: 4.0)
-        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-
-        URLSession.shared.dataTask(with: req) { data, _, _ in
+        startManagedTask(url: url, token: token, headers: ["User-Agent": "Mozilla/5.0"]) { data, _, _ in
             guard let data = data,
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 completion(nil, nil)
@@ -672,12 +1175,101 @@ final class LyricsParserAndFetcher {
             let yrcStr = (root["yrc"] as? [String: Any])?["lyric"] as? String
             let lrcStr = (root["lrc"] as? [String: Any])?["lyric"] as? String
             completion(yrcStr, lrcStr)
-        }.resume()
+        }
     }
 
-    // MARK: - Tier 3: Lyrics.ovh Plain Fallback
+    // MARK: - Tier 2B & 3: iTunes Canonical Track Resolver + Lyrics.ovh Fallback
+
+    private func recoverViaCanonicalMetadataAndPlainFallback(
+        token: UUID,
+        candidates: [(track: String, artist: String)],
+        rawTitle: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        targetDuration: TimeInterval,
+        existingEstimated: RankedCandidate?,
+        completion: @escaping (RankedCandidate?) -> Void
+    ) {
+        let searchTerm = [expectedTitle, expectedArtist].filter { !$0.isEmpty }.joined(separator: " ")
+        guard !searchTerm.isEmpty,
+              let termEnc = searchTerm.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let itunesURL = URL(string: "https://itunes.apple.com/search?term=\(termEnc)&media=music&entity=song&limit=4") else {
+            tryLyricsOVH(token: token, candidates: candidates, targetDuration: targetDuration) { ovh in
+                completion(existingEstimated ?? ovh)
+            }
+            return
+        }
+
+        startManagedTask(url: itunesURL, token: token) { [weak self] data, _, _ in
+            guard let self = self, self.isTokenCurrent(token) else { return }
+            var repairedPairs: [(track: String, artist: String)] = []
+            if let data = data,
+               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = root["results"] as? [[String: Any]], !results.isEmpty {
+                let ranked = results.sorted { a, b in
+                    let durA = (a["trackTimeMillis"] as? Double ?? 0) / 1000.0
+                    let durB = (b["trackTimeMillis"] as? Double ?? 0) / 1000.0
+                    let scA = Self.scoreCandidate(trackName: (a["trackName"] as? String) ?? "", artistName: (a["artistName"] as? String) ?? "", rawInputTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, refDuration: durA, targetDuration: targetDuration, hasSynced: true, hasWordTimings: false)
+                    let scB = Self.scoreCandidate(trackName: (b["trackName"] as? String) ?? "", artistName: (b["artistName"] as? String) ?? "", rawInputTitle: rawTitle, expectedTitle: expectedTitle, expectedArtist: expectedArtist, refDuration: durB, targetDuration: targetDuration, hasSynced: true, hasWordTimings: false)
+                    return scA > scB
+                }
+                for item in ranked.prefix(2) {
+                    let tn = self.cleanTitle((item["trackName"] as? String) ?? "")
+                    let an = self.cleanArtist((item["artistName"] as? String) ?? "")
+                    if !tn.isEmpty && !an.isEmpty {
+                        repairedPairs.append((tn, an))
+                    }
+                }
+            }
+
+            guard let canonical = repairedPairs.first else {
+                self.tryLyricsOVH(token: token, candidates: candidates, targetDuration: targetDuration) { ovh in
+                    completion(existingEstimated ?? ovh)
+                }
+                return
+            }
+
+            let secondGroup = DispatchGroup()
+            let rLock = NSLock()
+            var recoveredPool: [RankedCandidate] = []
+
+            secondGroup.enter()
+            self.fetchLRCLIBCandidates(
+                token: token,
+                candidates: repairedPairs,
+                album: "",
+                rawTitle: rawTitle,
+                expectedTitle: canonical.track,
+                expectedArtist: canonical.artist,
+                targetDuration: targetDuration,
+                onBatch: { batch in
+                    rLock.lock()
+                    recoveredPool.append(contentsOf: batch)
+                    rLock.unlock()
+                },
+                completion: { secondGroup.leave() }
+            )
+
+            secondGroup.notify(queue: DispatchQueue.global(qos: .userInitiated)) {
+                guard self.isTokenCurrent(token) else { return }
+                rLock.lock()
+                let syncedHit = recoveredPool.filter { !$0.isEstimated && $0.matchScore >= 65.0 }.max(by: { $0.matchScore < $1.matchScore })
+                let estHit = recoveredPool.filter { $0.matchScore >= 15.0 }.max(by: { $0.matchScore < $1.matchScore })
+                rLock.unlock()
+
+                if let best = syncedHit {
+                    completion(best)
+                    return
+                }
+                self.tryLyricsOVH(token: token, candidates: repairedPairs + candidates, targetDuration: targetDuration) { ovh in
+                    completion(estHit ?? existingEstimated ?? ovh)
+                }
+            }
+        }
+    }
 
     private func tryLyricsOVH(
+        token: UUID,
         candidates: [(track: String, artist: String)],
         targetDuration: TimeInterval,
         completion: @escaping (RankedCandidate?) -> Void
@@ -690,7 +1282,7 @@ final class LyricsParserAndFetcher {
             return
         }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        startManagedTask(url: url, token: token) { data, _, _ in
             guard let data = data,
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let plain = root["lyrics"] as? String, !plain.isEmpty else {
@@ -704,9 +1296,9 @@ final class LyricsParserAndFetcher {
                 isEstimated: true,
                 hasWordTimings: false,
                 referenceDuration: targetDuration,
-                matchScore: 10.0
+                matchScore: 20.0
             ))
-        }.resume()
+        }
     }
 
     // MARK: - Word-Timed NetEase YRC Parser
@@ -1129,10 +1721,15 @@ final class LyricsParserAndFetcher {
         }
         guard !tokens.isEmpty else { return [] }
 
-        let weights: [Double] = tokens.map { tok in
+        let weights: [Double] = tokens.enumerated().map { idx, tok in
+            let lower = tok.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let alpha = tok.unicodeScalars.filter { $0.properties.isAlphabetic || ($0.isASCII && $0.value >= 48) }.count
-            let punctPause = (tok.contains(",") || tok.contains(";")) ? 1.5 : 0.0
-            return max(1.2, Double(alpha) + punctPause)
+            let vowelCount = tok.unicodeScalars.filter { "aeiouaeiouyAEIOU".unicodeScalars.contains($0) }.count
+            let punctPause = (tok.contains(",") || tok.contains(";")) ? 1.65 : ((tok.contains("!") || tok.contains("?") || tok.contains(".")) ? 1.35 : 0.0)
+            let isFunctionWord = ["the", "a", "an", "to", "in", "on", "of", "and", "di", "ke", "yang", "dan", "ni", "no", "wa", "ga", "o", "e"].contains(lower)
+            let paceMult = isFunctionWord ? 0.72 : (idx + 1 == tokens.count ? 1.32 : 1.0)
+            let base = Double(alpha) + Double(vowelCount) * 0.25 + punctPause
+            return max(1.0, base * paceMult)
         }
         let totalWeight = max(1.0, weights.reduce(0, +))
 

@@ -1,49 +1,22 @@
 # Changelog
 
-Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.2] - 2026-11-26
 
 ### Added
-- `README.md`, `CHANGELOG.md`, `.gitignore`.
-- **Notch output:** `NotchLyricsWindowController`, top-center transparent `NSPanel`, `DisplayMode` Touch Bar / Notch / Both / Hidden, physical-notch-aware top inset, secondary display support, same lyrics/theme/artwork pipeline, reduced-motion handling.
-- **Hover-expanded notch:** cursor enter auto-expands; shows artwork, title, artist, album, lyrics, backing vocal, progress, native previous/play-pause/next controls; no focus stealing; keyboard accessible; collapses on exit.
-- **Browser notch UI:** `web/notch.html`, `web/notch.css`, `web/notch.js`, no build step, Windows Chrome/Brave/Edge/Firefox-compatible; `NotchLyrics.update`, `postMessage`, command callbacks; OS always-on-top/system-wide Now Playing still needs extension/native host.
-- `tests/run.sh` + `tests/NotchTests.swift` standalone tests for display-mode routing and top-center geometry.
-- `build.sh` reproducible local build, source `Info.plist`, `VERSION`, `BUILD_NUMBER`, signing hook.
-- `notarize.sh` untuk Developer ID + notarytool + stapler.
-
-### Changed
-- Source dapat di-`git init`; build tidak lagi bergantung pada app bundle yang sudah ada.
-
-### Notes
-- Lisensi belum dipilih; jangan publish source sebelum memilih lisensi.
-- Notarization memerlukan kredensial Apple; tidak disimpan di repo.
-- Mode Notch belum di-screenshot/di-verifikasi pada Touch Bar fisik + physical-notch hardware.
+- **MIT License:** Added `LICENSE` (MIT) and full English GitHub documentation (`README.md`, `windows/README.md`, `web/README.md`).
+- **Multi-User macOS Portability:** `AppDelegate` resolves bundled/local `MediaRemoteAdapter` cleanly and adds zero-dependency Apple Events fallback (`Music`, `Spotify`, `Safari`) when external adapters are absent; auto-selects Notch mode on Macs with physical camera notches; `build.sh` supports `--universal`, `--package`, and automatic resource bundling.
+- **Windows Desktop Companion (`windows/`) & Extension (`windows/browser-extension/`):** Always-on-top Electron Golden Ratio OLED Notch app backed by WinRT SMTC (`win_smtc.ps1`), shared multi-source JS lyrics & Hangul/CJK engine (`lyrics-engine.js`), automated Node unit tests (`windows/tests/lyrics-engine.test.js`), plus Manifest V3 extension for Chrome/Edge/Brave.
+- **Cross-Platform GitHub Actions CI:** Added `.github/workflows/ci-build.yml` to build & test both macOS Universal `.app` and Windows `.exe`.
+- **Intonation & Real-Time Vocal DSP:** Added CoreAudio zero-crossing vocal pitch/brightness (`vocalIntonation`) and syllable onset pulse (`vocalOnset`), dynamic singing tempo pacing (`realtimeDeliveryTempoScale`), linguistic phrasing weights, progress cursor glow bead, and 3-zone chromatic karaoke sweep.
+- **Multilingual Romaji & Complex Script Accuracy:** Particle corrections (`は/へ/を` -> `wa/e/o`), cross-token Japanese sokuon & chōonpu handling (`待っていた` -> `matte ita`, `コーヒー` -> `koohii`), YRC isolated `っ` gemination, algorithmic Korean Hangul Revised Romanization (`사랑해요 괜찮아 빨리`), clean Cyrillic, and intact word-cluster sweeps for RTL Arabic/Hebrew, Hindi, and Thai.
+- **Notch Polish:** Zero-truncation multi-line auto-fit wrapping, pure `#000000` OLED black preservation with album-tinted lyrics text, hover-expanded `MM:SS / MM:SS` playback timer, and Golden Ratio geometry (`phi = 1.618`) across Attached Bezel, Floating Island, and Edge Dock Strip styles.
 
 ## [2.1] - 2026-11-26
 
 ### Added
-- **Lyrics:** karaoke per huruf/per kata, per-word timing, synthesized timing, main + backing vocal independent progress.
-- **Lyrics sources:** LRCLIB + NetEase paralel, ranking durasi/granularity, Lyrics.ovh fallback, LRC/YRC/enhanced LRC, estimated plain lyrics.
-- **Romanization:** Jepang (`CFStringTokenizer`, romaji), Korea, China, Cyrillic, Thai, Arabic; romanized word timing.
-- **Auto-sync vokal:** CoreAudio Process Tap + private aggregate, 300–3400 Hz biquad, mid/side, adaptive floor/peak, lead + backing offsets, clarity, consensus, reset; fallback timestamp.
-- **Color:** artwork palette extraction ImageIO, WCAG contrast guard, adaptiveArtwork/vividArtwork/themeOnly, live tint, EQ/progress motion.
-- **Themes:** 4 built-in + custom editor; layout, slots, alignment, fonts, sizes, padding, EQ, backing placement, transitions, word animations, animation speeds, karaoke offset, color sync; JSON persistence.
-- **Animation:** `karaokeLift`, `smoothWipe`, `typewriter`, `glowPulse`, `solid`; `pushUp`, `pushDown`, `slideLeft`, `crossfade`, `zoomSoft`, `none`; `reduceMotion`.
-- **Media:** Safari-only default, Now Playing streaming, play/pause, single instance, graceful shutdown, adapter cleanup.
-- **App:** version 2.1 build 3, macOS 14.2+, ad-hoc signing local, source modular 8 Swift files.
-
-### Fixed
-- Kompilasi `FetchedLyricsResult` setelah penambahan `romanizedLines`.
-- Restart CoreAudio tap setelah pause/resume; retry cooldown reset on stop.
-- Engine reset saat track change; manual offset reset lead + backing.
-- Scoring alignment optimized; optional reduce-motion/animation disable.
-
-### Known limitations
-- Belum ada XCTest/CI; verifikasi ad-hoc manual + build/runtime.
-- Touch Bar visual belum di-screenshot otomatis.
-- Accuracy sync bergantung izin audio, timing sumber, center-panned vokal; fallback timestamp.
-- Lirik membutuhkan network sumber eksternal; estimated fallback bisa kurang akurat.
-- Dependency Atoll MediaRemoteAdapter hard-coded.
-- Source belum git init sebelum perubahan rilis ini; signing ad-hoc bukan Developer ID; belum notarized.
+- **Lyrics:** Karaoke per-letter/per-word sweep, synthesized timings, independent main + backing vocal progress.
+- **Lyrics sources:** LRCLIB + NetEase parallel search, Lyrics.ovh fallback, LRC/YRC/enhanced LRC parsing.
+- **Auto-sync vocal:** CoreAudio Process Tap + private aggregate device, 300–3400 Hz biquad, mid/side separation, lead + backing offsets.
+- **Themes & Colors:** 4 built-in themes + live Studio editor, artwork color extraction with WCAG AA contrast guard.

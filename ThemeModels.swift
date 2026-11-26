@@ -185,6 +185,20 @@ enum ThemeColorSyncMode: String, Codable, CaseIterable {
     }
 }
 
+enum ThemeNotchStyle: String, Codable, CaseIterable {
+    case attachedBezel = "attachedBezel"
+    case floatingIsland = "floatingIsland"
+    case edgeDockStrip = "edgeDockStrip"
+
+    var displayName: String {
+        switch self {
+        case .attachedBezel: return "Menempel Bezel Atas"
+        case .floatingIsland: return "Dynamic Island Mengambang"
+        case .edgeDockStrip: return "Strip Bezel Penuh"
+        }
+    }
+}
+
 struct TouchBarTheme: Codable, Equatable, Identifiable {
     var id: String
     var name: String
@@ -221,6 +235,7 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
     var wordSpeedScale: CGFloat
     var karaokeOffsetSeconds: TimeInterval
     var colorSyncMode: ThemeColorSyncMode
+    var notchStyle: ThemeNotchStyle
 
     init(
         id: String,
@@ -255,7 +270,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         animationSpeed: CGFloat = 1.0,
         wordSpeedScale: CGFloat = 1.0,
         karaokeOffsetSeconds: TimeInterval = 0.0,
-        colorSyncMode: ThemeColorSyncMode = .adaptiveArtwork
+        colorSyncMode: ThemeColorSyncMode = .adaptiveArtwork,
+        notchStyle: ThemeNotchStyle = .attachedBezel
     ) {
         self.id = id
         self.name = name
@@ -290,6 +306,7 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         self.wordSpeedScale = wordSpeedScale
         self.karaokeOffsetSeconds = karaokeOffsetSeconds
         self.colorSyncMode = colorSyncMode
+        self.notchStyle = notchStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -330,6 +347,7 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         wordSpeedScale = try c.decodeIfPresent(CGFloat.self, forKey: .wordSpeedScale) ?? 1.0
         karaokeOffsetSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .karaokeOffsetSeconds) ?? 0.0
         colorSyncMode = try c.decodeIfPresent(ThemeColorSyncMode.self, forKey: .colorSyncMode) ?? .adaptiveArtwork
+        notchStyle = try c.decodeIfPresent(ThemeNotchStyle.self, forKey: .notchStyle) ?? .attachedBezel
     }
 
     static let builtInThemes: [TouchBarTheme] = [
@@ -352,7 +370,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
             layoutMode: .standard,
             lineTransition: .pushUp,
             wordAnimation: .karaokeLift,
-            colorSyncMode: .adaptiveArtwork
+            colorSyncMode: .adaptiveArtwork,
+            notchStyle: .attachedBezel
         ),
         TouchBarTheme(
             id: "braun-signal",
@@ -375,7 +394,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
             textAlignment: .left,
             lineTransition: .slideLeft,
             wordAnimation: .smoothWipe,
-            colorSyncMode: .themeOnly
+            colorSyncMode: .themeOnly,
+            notchStyle: .edgeDockStrip
         ),
         TouchBarTheme(
             id: "studio-crimson",
@@ -397,7 +417,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
             trackTitlePosition: .hidden,
             lineTransition: .zoomSoft,
             wordAnimation: .glowPulse,
-            colorSyncMode: .vividArtwork
+            colorSyncMode: .vividArtwork,
+            notchStyle: .floatingIsland
         ),
         TouchBarTheme(
             id: "warm-ivory",
@@ -418,7 +439,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
             layoutMode: .standard,
             lineTransition: .crossfade,
             wordAnimation: .typewriter,
-            colorSyncMode: .themeOnly
+            colorSyncMode: .themeOnly,
+            notchStyle: .floatingIsland
         )
     ]
 }

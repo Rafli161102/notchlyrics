@@ -27,6 +27,9 @@ final class VocalAutoSyncEngine {
     private var lock = os_unfair_lock()
     private var latestVocalProminence: Float = 0
     private var latestBackingProminence: Float = 0
+    private var latestVocalIntonation: Float = 0.45
+    private var latestSyllableOnset: Float = 0.0
+    private var prevProminenceForOnset: Float = 0.0
     private var samplesBuffer: [VocalEnergySample] = []
     private var lastSampleElapsed: TimeInterval = -1
     private var lastEvalTime: Date = .distantPast
@@ -41,6 +44,16 @@ final class VocalAutoSyncEngine {
     private var adaptiveFloor: Float = 0.0005
     private var backingPeak: Float = 0.006
     private var backingFloor: Float = 0.0002
+
+    // Preallocated fixed ring buffer for zero-allocation real-time BPM onset flux
+    private static let beatRingCapacity = 512
+    private var beatTimestamps = [Double](repeating: 0, count: 512)
+    private var beatFluxValues = [Float](repeating: 0, count: 512)
+    private var beatWriteIdx: Int = 0
+    private var beatCount: Int = 0
+    private var prevFullRMS: Float = 0
+    private var bpmHistory: [Double] = []
+    private(set) var detectedBPM: Double = 0
 
     private(set) var isTapActive: Bool = false
     private(set) var statusDescription: String = "Standby"
@@ -144,16 +157,66 @@ final class VocalAutoSyncEngine {
         samplesBuffer.removeAll(keepingCapacity: true)
         latestVocalProminence = 0
         latestBackingProminence = 0
+        latestVocalIntonation = 0.45
+        latestSyllableOnset = 0.0
+        prevProminenceForOnset = 0.0
         lastSampleElapsed = -1
         candidateHistory.removeAll()
         backingCandidateHistory.removeAll()
         lastAutoOffset = 0
         lastBackingOffset = 0
         lastVocalClarity = 0
+        beatWriteIdx = 0
+        beatCount = 0
+        prevFullRMS = 0
+        bpmHistory.removeAll()
+        detectedBPM = 0
         os_unfair_lock_unlock(&lock)
         if isTapActive {
-            statusDescription = "Menganalisa vokal..."
+            statusDescription = "Menganalisa vokal & BPM..."
         }
+    }
+
+    func autoTempoScale() -> Double {
+        os_unfair_lock_lock(&lock)
+        let bpm = detectedBPM
+        os_unfair_lock_unlock(&lock)
+        guard bpm >= 55 && bpm <= 190 else { return 1.0 }
+        return min(1.45, max(0.72, bpm / 112.0))
+    }
+
+    /// Combines track BPM with real-time vocal phrasing dynamics: gently slows on sustained breath/vibrato
+    /// and crisply locks onto rapid articulated syllable bursts.
+    func realtimeDeliveryTempoScale() -> Double {
+        let base = autoTempoScale()
+        let e = Double(currentNormalizedEnergy())
+        os_unfair_lock_lock(&lock)
+        let inton = Double(latestVocalIntonation)
+        let onset = Double(latestSyllableOnset)
+        os_unfair_lock_unlock(&lock)
+        let deliveryMod = min(1.16, max(0.86, 0.88 + e * 0.14 + onset * 0.12 + inton * 0.04))
+        return min(1.55, max(0.70, base * deliveryMod))
+    }
+
+    func currentVocalIntonation() -> Float {
+        os_unfair_lock_lock(&lock)
+        let v = latestVocalIntonation
+        os_unfair_lock_unlock(&lock)
+        return v
+    }
+
+    func currentSyllableOnset() -> Float {
+        os_unfair_lock_lock(&lock)
+        let v = latestSyllableOnset
+        os_unfair_lock_unlock(&lock)
+        return v
+    }
+
+    func currentBPM() -> Double {
+        os_unfair_lock_lock(&lock)
+        let bpm = detectedBPM
+        os_unfair_lock_unlock(&lock)
+        return bpm
     }
 
     func resetOffsetManual() {
@@ -240,16 +303,18 @@ final class VocalAutoSyncEngine {
         }
         let snapshot = samplesBuffer
         let evalElapsed = now.timeIntervalSince(lastEvalTime)
-        if evalElapsed < 0.50 {
+        if evalElapsed < 0.35 {
             os_unfair_lock_unlock(&lock)
             return
         }
         lastEvalTime = now
         os_unfair_lock_unlock(&lock)
 
-        // Require ~2.4 seconds of contiguous audio (24 samples at 10 Hz) for fast initial lock
-        guard snapshot.count >= 24 else {
-            let pct = Int((Double(snapshot.count) / 24.0) * 100.0)
+        estimateRealtimeBPM(nowSec: CFAbsoluteTimeGetCurrent())
+
+        // Require ~1.8 seconds of contiguous audio (18 samples at 10 Hz) for fast sub-second lock
+        guard snapshot.count >= 18 else {
+            let pct = Int((Double(snapshot.count) / 18.0) * 100.0)
             statusDescription = "Kalibrasi vokal (\(pct)%)..."
             return
         }
@@ -431,14 +496,35 @@ final class VocalAutoSyncEngine {
         }
 
         let diff = targetDelta - lastAutoOffset
-        let steppedDelta: Double
-        if abs(diff) <= 0.10 {
+        var steppedDelta: Double
+        if abs(diff) <= 0.04 {
             steppedDelta = lastAutoOffset
-        } else if abs(diff) > 2.5 && recent.count >= 2 {
-            steppedDelta = (targetDelta * 10.0).rounded() / 10.0
+        } else if abs(diff) > 2.0 && recent.count >= 2 {
+            steppedDelta = (targetDelta * 25.0).rounded() / 25.0
         } else {
             let clampStep = max(-0.8, min(0.8, diff))
-            steppedDelta = ((lastAutoOffset + clampStep) * 10.0).rounded() / 10.0
+            steppedDelta = ((lastAutoOffset + clampStep) * 25.0).rounded() / 25.0
+        }
+
+        // High-precision 40ms sub-second micro-phase refinement around settled offset
+        if !risingOnsets.isEmpty {
+            var bestFineDelta = steppedDelta
+            var bestFineScore = -Double.greatestFiniteMagnitude
+            var fine = steppedDelta - 0.56
+            while fine <= steppedDelta + 0.56 {
+                let s = scoreOffset(fine) - abs(fine - steppedDelta) * 0.04
+                if s > bestFineScore {
+                    bestFineScore = s
+                    bestFineDelta = fine
+                }
+                fine += 0.04
+            }
+            let baseFineScore = scoreOffset(steppedDelta)
+            if bestFineScore - baseFineScore >= 0.12 {
+                // Smoothly pull toward exact 40ms micro-phase without jitter
+                let pull = max(-0.12, min(0.12, bestFineDelta - steppedDelta))
+                steppedDelta = ((steppedDelta + pull) * 25.0).rounded() / 25.0
+            }
         }
 
         let clarityPct = Int(min(100, max(10, ((p85 - p20) / max(1e-5, p85)) * 100)))
@@ -526,17 +612,91 @@ final class VocalAutoSyncEngine {
             }
         }
 
-        let leadChanged = abs(steppedDelta - lastAutoOffset) >= 0.15
-        let bgChanged = abs(steppedBackingDelta - lastBackingOffset) >= 0.15
+        let leadChanged = abs(steppedDelta - lastAutoOffset) >= 0.05
+        let bgChanged = abs(steppedBackingDelta - lastBackingOffset) >= 0.10
         if leadChanged || bgChanged || statusDescription.hasPrefix("Kalibrasi") || statusDescription.hasPrefix("Menganalisa") || statusDescription.hasPrefix("Menyelaraskan") {
             lastAutoOffset = steppedDelta
             lastBackingOffset = steppedBackingDelta
-            let msg = (abs(steppedDelta) < 0.15 && abs(steppedBackingDelta) < 0.15)
-                ? "Auto-Sync Vokal: Selaras 0.00s (Clarity \(clarityPct)%)"
-                : String(format: "Auto-Sync: Lead %+.2fs | BG %+.2fs (%d%%)", steppedDelta, steppedBackingDelta, clarityPct)
+            let bpmNow = Int(currentBPM().rounded())
+            let bpmTag = bpmNow >= 55 ? "BPM \(bpmNow) | " : ""
+            let msg = (abs(steppedDelta) < 0.05 && abs(steppedBackingDelta) < 0.10)
+                ? "\(bpmTag)Auto-Sync: 0.00s (Clarity \(clarityPct)%)"
+                : String(format: "%@Sync: Lead %+.2fs | BG %+.2fs (%d%%)", bpmTag, steppedDelta, steppedBackingDelta, clarityPct)
             statusDescription = msg
             onAutoOffsetUpdated?(steppedDelta, steppedBackingDelta, msg)
         }
+    }
+
+    private func estimateRealtimeBPM(nowSec: Double) {
+        os_unfair_lock_lock(&lock)
+        let count = beatCount
+        let writeIdx = beatWriteIdx
+        guard count >= 120 else {
+            os_unfair_lock_unlock(&lock)
+            return
+        }
+        var points: [(t: Double, f: Float)] = []
+        points.reserveCapacity(count)
+        let cap = Self.beatRingCapacity
+        let startIdx = (count == cap) ? writeIdx : 0
+        for i in 0..<count {
+            let idx = (startIdx + i) % cap
+            let ts = beatTimestamps[idx]
+            if nowSec - ts <= 5.5 {
+                points.append((ts, beatFluxValues[idx]))
+            }
+        }
+        os_unfair_lock_unlock(&lock)
+
+        guard points.count >= 80, let firstT = points.first?.t else { return }
+        let span = nowSec - firstT
+        guard span >= 2.8 else { return }
+
+        // Resample rhythmic onset flux onto uniform 50 Hz grid (20 ms per bin)
+        let gridRate = 50.0
+        let gridCount = Int(span * gridRate)
+        guard gridCount >= 140 else { return }
+        var grid = [Double](repeating: 0, count: gridCount)
+        for p in points {
+            let bin = Int((p.t - firstT) * gridRate)
+            if bin >= 0 && bin < gridCount {
+                grid[bin] = max(grid[bin], Double(p.f))
+            }
+        }
+
+        let mean = grid.reduce(0, +) / Double(gridCount)
+        let maxV = grid.max() ?? 0
+        guard maxV > 1e-5 else { return }
+        for i in 0..<gridCount { grid[i] -= mean }
+
+        // Autocorrelation lag search across 62..176 BPM -> lag 17..48 bins at 50 Hz
+        var bestLag = 26
+        var bestScore = -Double.greatestFiniteMagnitude
+        for lag in 17...48 {
+            var corr = 0.0
+            let limit = gridCount - lag
+            if limit <= 10 { continue }
+            for i in 0..<limit {
+                corr += grid[i] * grid[i + lag]
+            }
+            let bpm = (60.0 * gridRate) / Double(lag)
+            // Gentle perceptual prior centering ~116 BPM to avoid half/double octave flips
+            let prior = 1.0 - min(0.32, abs(bpm - 116.0) / 220.0)
+            let score = (corr / Double(limit)) * prior
+            if score > bestScore {
+                bestScore = score
+                bestLag = lag
+            }
+        }
+
+        let candidateBPM = (60.0 * gridRate) / Double(bestLag)
+        os_unfair_lock_lock(&lock)
+        bpmHistory.append(candidateBPM)
+        if bpmHistory.count > 6 { bpmHistory.removeFirst(bpmHistory.count - 6) }
+        let sortedBPM = bpmHistory.sorted()
+        let medianBPM = sortedBPM[sortedBPM.count / 2]
+        detectedBPM = detectedBPM == 0 ? medianBPM : (detectedBPM * 0.72 + medianBPM * 0.28)
+        os_unfair_lock_unlock(&lock)
     }
 
     // MARK: - CoreAudio DSP Internals
@@ -604,6 +764,8 @@ final class VocalAutoSyncEngine {
         var midSq: Float = 0
         var sideSq: Float = 0
         var totalSq: Float = 0
+        var zcrCount: Int = 0
+        var prevYm: Float = my1
 
         for f in 0..<frames {
             let l: Float
@@ -625,6 +787,8 @@ final class VocalAutoSyncEngine {
 
             let ym = b0 * mid + b1 * mx1 + b2 * mx2 - a1 * my1 - a2 * my2
             mx2 = mx1; mx1 = mid; my2 = my1; my1 = ym
+            if prevYm <= 0 && ym > 0 { zcrCount += 1 }
+            prevYm = ym
             midSq += ym * ym
 
             let ys = b0 * side + b1 * sx1 + b2 * sx2 - a1 * sy1 - a2 * sy2
@@ -645,9 +809,30 @@ final class VocalAutoSyncEngine {
         let sideBandRatio = min(1.0, max(0.15, sideVocalRMS / (totalRMS + 1e-6)))
         let sideProminence = sideVocalRMS * sideBandRatio
 
+        // Real-time vocal intonation / brightness proxy from bandpass zero-crossing frequency (240Hz..1640Hz)
+        let zcrHz = (Float(zcrCount) * Float(sampleRate)) / max(1.0, Float(frames))
+        let rawIntonation = min(1.0, max(0.0, (zcrHz - 240.0) / 1400.0))
+        let nowTS = CFAbsoluteTimeGetCurrent()
+
         os_unfair_lock_lock(&lock)
+        let prevProm = prevProminenceForOnset
+        let onsetImpulse: Float = prominence > max(adaptiveFloor * 1.15, prevProm * 1.16)
+            ? min(1.0, (prominence - prevProm) / max(1e-4, adaptivePeak * 0.65))
+            : 0.0
+        prevProminenceForOnset = prominence * 0.60 + prevProm * 0.40
         latestVocalProminence = latestVocalProminence * 0.62 + prominence * 0.38
         latestBackingProminence = latestBackingProminence * 0.60 + sideProminence * 0.40
+        if prominence > adaptiveFloor * 1.1 {
+            latestVocalIntonation = latestVocalIntonation * 0.72 + rawIntonation * 0.28
+        }
+        latestSyllableOnset = max(onsetImpulse, latestSyllableOnset * 0.84)
+
+        let flux = max(0, totalRMS - prevFullRMS)
+        prevFullRMS = prevFullRMS * 0.45 + totalRMS * 0.55
+        beatTimestamps[beatWriteIdx] = nowTS
+        beatFluxValues[beatWriteIdx] = flux
+        beatWriteIdx = (beatWriteIdx + 1) % Self.beatRingCapacity
+        if beatCount < Self.beatRingCapacity { beatCount += 1 }
         os_unfair_lock_unlock(&lock)
     }
 }

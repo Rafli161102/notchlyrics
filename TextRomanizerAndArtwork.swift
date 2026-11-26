@@ -14,6 +14,39 @@ enum TextRomanizer {
         return text.unicodeScalars.contains { $0.value > 0x024F && $0.properties.isAlphabetic }
     }
 
+    static func isRTLScript(_ text: String) -> Bool {
+        return text.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return (0x0590...0x05FF).contains(v)
+                || (0x0600...0x06FF).contains(v)
+                || (0x0750...0x077F).contains(v)
+                || (0x08A0...0x08FF).contains(v)
+        }
+    }
+
+    /// Arabic/Hebrew RTL, Thai, and Indic/Devanagari scripts rely on cross-glyph ligatures & diacritic stacking;
+    /// breaking attributes per character destroys cursive joining, so renderers must group by word/cluster.
+    static func requiresClusterGrouping(_ text: String) -> Bool {
+        if isRTLScript(text) { return true }
+        return text.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return (0x0900...0x0DFF).contains(v) || (0x0E00...0x0E7F).contains(v)
+        }
+    }
+
+    static func containsHangul(_ text: String) -> Bool {
+        return text.unicodeScalars.contains { scalar in
+            let v = scalar.value
+            return (0xAC00...0xD7AF).contains(v) || (0x1100...0x11FF).contains(v) || (0x3130...0x318F).contains(v)
+        }
+    }
+
+    static func containsCyrillic(_ text: String) -> Bool {
+        return text.unicodeScalars.contains { scalar in
+            (0x0400...0x04FF).contains(scalar.value)
+        }
+    }
+
     static func romanize(_ text: String, preferJapanese: Bool = false) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, needsRomanization(trimmed) else { return text }
@@ -23,9 +56,109 @@ enum TextRomanizer {
             return romanizeJapanese(trimmed)
         }
 
-        let latin = cfTransform(trimmed, transform: kCFStringTransformToLatin)
+        if containsHangul(trimmed) {
+            return romanizeKoreanHangul(trimmed)
+        }
+
+        let isRussian = containsCyrillic(trimmed)
+
+        var latin = cfTransform(trimmed, transform: kCFStringTransformToLatin)
+        latin = cleanPhoneticMarkers(latin, isKorean: false, isCyrillic: isRussian)
         let clean = cfTransform(latin, transform: kCFStringTransformStripDiacritics)
-        return normalizeSpacing(clean.replacingOccurrences(of: "-", with: ""))
+        let strippedMods = clean.replacingOccurrences(
+            of: "[\u{02B9}\u{02BA}\u{02BC}\u{02BD}\u{02BE}\u{02BF}-]",
+            with: "",
+            options: .regularExpression
+        )
+        return normalizeSpacing(strippedMods)
+    }
+
+    private static func romanizeKoreanHangul(_ text: String) -> String {
+        let initials = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"]
+        let medials = ["a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i"]
+        let finals = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "b", "l", "t", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"]
+        let liaisonCoda = ["", "g", "kk", "ks", "n", "nj", "n", "d", "r", "lg", "lm", "lb", "ls", "lt", "lp", "r", "m", "b", "bs", "s", "ss", "ng", "j", "ch", "k", "t", "p", ""]
+
+        let scalars = Array(text.unicodeScalars)
+        var out = ""
+        var i = 0
+        var prevFinalIdx = 0
+
+        while i < scalars.count {
+            let v = scalars[i].value
+            if (0xAC00...0xD7A3).contains(v) {
+                let sIdx = Int(v - 0xAC00)
+                let lIdx = sIdx / 588
+                let vIdx = (sIdx % 588) / 28
+                let fIdx = sIdx % 28
+
+                var onset = initials[lIdx]
+                // ㄹ preceded by coda ㄹ assimilates as lateral "ll" (e.g. 빨리 -> ppalli)
+                if lIdx == 5 && prevFinalIdx == 8 {
+                    onset = "l"
+                }
+
+                // Look ahead to next scalar to apply smooth Korean consonant liaison before ㅇ + vowel
+                var finalStr = finals[fIdx]
+                if fIdx > 0 && fIdx != 21 && i + 1 < scalars.count {
+                    let nextV = scalars[i + 1].value
+                    if (0xAC00...0xD7A3).contains(nextV) {
+                        let nextL = Int(nextV - 0xAC00) / 588
+                        if nextL == 11 {
+                            if fIdx == 17 && (lIdx == 9 || lIdx == 10 || lIdx == 12) {
+                                // 싶은 / 싶어 common lyrical form -> sipeo
+                                finalStr = "p"
+                            } else {
+                                finalStr = liaisonCoda[fIdx]
+                            }
+                        } else if nextL == 18 && (fIdx == 1 || fIdx == 7 || fIdx == 12 || fIdx == 17) {
+                            // Aspirated fusion (ㄱ/ㄷ/ㅂ + ㅎ -> kh/th/ph)
+                            finalStr = liaisonCoda[fIdx]
+                        }
+                    }
+                }
+
+                out += onset + medials[vIdx] + finalStr
+                prevFinalIdx = fIdx
+                i += 1
+            } else {
+                prevFinalIdx = 0
+                let chStr = String(scalars[i])
+                if needsRomanization(chStr) {
+                    let t = cfTransform(chStr, transform: kCFStringTransformToLatin)
+                    out += cfTransform(t, transform: kCFStringTransformStripDiacritics)
+                } else {
+                    out += chStr
+                }
+                i += 1
+            }
+        }
+        return normalizeSpacing(out)
+    }
+
+    private static func cleanPhoneticMarkers(_ latin: String, isKorean: Bool, isCyrillic: Bool) -> String {
+        var s = latin
+        if isCyrillic {
+            let cyrillicMap: [(String, String)] = [
+                ("û", "yu"), ("Û", "Yu"),
+                ("â", "ya"), ("Â", "Ya"),
+                ("ŝ", "shch"), ("Ŝ", "Shch"),
+                ("š", "sh"), ("Š", "Sh"),
+                ("č", "ch"), ("Č", "Ch"),
+                ("ž", "zh"), ("Ž", "Zh"),
+                ("ë", "yo"), ("Ë", "Yo")
+            ]
+            for (k, v) in cyrillicMap {
+                s = s.replacingOccurrences(of: k, with: v)
+            }
+        }
+        if isKorean {
+            s = s.replacingOccurrences(of: "ŏ", with: "eo").replacingOccurrences(of: "Ŏ", with: "Eo")
+            s = s.replacingOccurrences(of: "ŭ", with: "u").replacingOccurrences(of: "Ŭ", with: "U")
+            s = s.replacingOccurrences(of: "-", with: "")
+            s = s.replacingOccurrences(of: "gh", with: "kh")
+        }
+        return s
     }
 
     static func romanizeLines(_ lines: [LyricLine], titleHint: String = "", artistHint: String = "") -> [LyricLine] {
@@ -33,17 +166,71 @@ enum TextRomanizer {
             || containsJapaneseKana(artistHint)
             || lines.contains { containsJapaneseKana($0.mainText) || containsJapaneseKana($0.backingText ?? "") }
 
-        func romanizeWordsList(_ srcWords: [LyricWord]) -> (text: String?, words: [LyricWord]) {
+        func romanizeWordsList(_ srcWords: [LyricWord], fullLineText: String) -> (text: String?, words: [LyricWord]) {
             guard !srcWords.isEmpty else { return (nil, []) }
+            let jpContextReadings: [String: String] = songHasKana ? buildJapaneseTokenMap(fullLineText) : [:]
             var outWords: [LyricWord] = []
             var combined = ""
-            for w in srcWords {
+            var pendingDoubleNext = false
+
+            for (idx, w) in srcWords.enumerated() {
                 let rawTrim = w.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                var piece = rawTrim.isEmpty ? "" : romanize(rawTrim, preferJapanese: songHasKana)
+
+                // Handle isolated YRC sokuon ("っ"/"ッ") or choonpu ("ー") split across character timings
+                if songHasKana && (rawTrim == "っ" || rawTrim == "ッ") {
+                    pendingDoubleNext = true
+                    if !outWords.isEmpty {
+                        outWords[outWords.count - 1] = LyricWord(
+                            time: outWords[outWords.count - 1].time,
+                            duration: outWords[outWords.count - 1].duration + w.duration,
+                            text: outWords[outWords.count - 1].text
+                        )
+                    }
+                    continue
+                }
+                if songHasKana && rawTrim == "ー" && !combined.isEmpty {
+                    let prevLast = combined.last!
+                    if "aeiou".contains(prevLast) {
+                        let ext = String(prevLast)
+                        combined += ext
+                        outWords.append(LyricWord(time: w.time, duration: w.duration, text: ext))
+                    }
+                    continue
+                }
+
+                var piece: String
+                if rawTrim.isEmpty {
+                    piece = ""
+                } else if songHasKana, let ctxReading = jpContextReadings[rawTrim], !ctxReading.isEmpty {
+                    piece = ctxReading
+                } else {
+                    piece = romanize(rawTrim, preferJapanese: songHasKana)
+                }
+
+                if pendingDoubleNext && !piece.isEmpty {
+                    if let first = piece.first, "bcdfghjklmnpqrstvwxyz".contains(first.lowercased()) {
+                        let doubled = (first == "c" || first == "C") ? "t" : String(first)
+                        piece = doubled + piece
+                        pendingDoubleNext = false
+                    }
+                }
                 if piece.isEmpty && !w.text.isEmpty {
                     piece = w.text
                 }
+                if songHasKana && rawTrim.hasSuffix("っ") && idx + 1 < srcWords.count {
+                    // Already converted inside romanize if complete; clean stray tsu suffix at boundary
+                    if piece.hasSuffix("tsu") && piece.count > 3 {
+                        piece = String(piece.dropLast(3))
+                        pendingDoubleNext = true
+                    }
+                }
+
+                let wasDoubledJoin = !combined.isEmpty && piece.count >= 2
+                    && outWords.last != nil
+                    && idx > 0
+                    && srcWords[idx - 1].text.trimmingCharacters(in: .whitespacesAndNewlines) == "っ"
                 let needsSpace = !combined.isEmpty
+                    && !wasDoubledJoin
                     && !combined.hasSuffix(" ")
                     && !piece.isEmpty
                     && !piece.hasPrefix(" ")
@@ -57,8 +244,8 @@ enum TextRomanizer {
         }
 
         return lines.map { line in
-            let mainPair = romanizeWordsList(line.words)
-            let backPair = romanizeWordsList(line.backingWords)
+            let mainPair = romanizeWordsList(line.words, fullLineText: line.mainText)
+            let backPair = romanizeWordsList(line.backingWords, fullLineText: line.backingText ?? "")
             let rMain = mainPair.text ?? romanize(line.mainText, preferJapanese: songHasKana)
             let rBack = backPair.text ?? line.backingText.map { romanize($0, preferJapanese: songHasKana) }
 
@@ -88,34 +275,129 @@ enum TextRomanizer {
         return mutable as String
     }
 
+    private static func expandJapaneseMacrons(_ text: String, hasChoonpu: Bool) -> String {
+        var s = text
+        if hasChoonpu {
+            s = s.replacingOccurrences(of: "ō", with: "oo").replacingOccurrences(of: "Ō", with: "Oo")
+            s = s.replacingOccurrences(of: "ū", with: "uu").replacingOccurrences(of: "Ū", with: "Uu")
+            s = s.replacingOccurrences(of: "ē", with: "ee").replacingOccurrences(of: "Ē", with: "Ee")
+            s = s.replacingOccurrences(of: "ī", with: "ii").replacingOccurrences(of: "Ī", with: "Ii")
+            s = s.replacingOccurrences(of: "ā", with: "aa").replacingOccurrences(of: "Ā", with: "Aa")
+        } else {
+            s = s.replacingOccurrences(of: "ō", with: "ou").replacingOccurrences(of: "Ō", with: "Ou")
+            s = s.replacingOccurrences(of: "ū", with: "uu").replacingOccurrences(of: "Ū", with: "Uu")
+            s = s.replacingOccurrences(of: "ē", with: "ei").replacingOccurrences(of: "Ē", with: "Ei")
+            s = s.replacingOccurrences(of: "ī", with: "ii").replacingOccurrences(of: "Ī", with: "Ii")
+            s = s.replacingOccurrences(of: "ā", with: "aa").replacingOccurrences(of: "Ā", with: "Aa")
+        }
+        return cfTransform(s, transform: kCFStringTransformStripDiacritics)
+    }
+
+    private static func transcribeJapaneseToken(rawTok: String, tokenizer: CFStringTokenizer) -> String {
+        if rawTok == "は" { return "wa" }
+        if rawTok == "へ" { return "e" }
+        if rawTok == "を" { return "o" }
+        let rawLatin: String
+        if let attr = CFStringTokenizerCopyCurrentTokenAttribute(tokenizer, kCFStringTokenizerAttributeLatinTranscription) as? String {
+            rawLatin = attr
+        } else {
+            rawLatin = cfTransform(rawTok, transform: kCFStringTransformToLatin)
+        }
+        let expanded = expandJapaneseMacrons(rawLatin, hasChoonpu: rawTok.contains("ー"))
+        return expanded
+    }
+
+    private static func buildJapaneseTokenMap(_ text: String) -> [String: String] {
+        guard !text.isEmpty, needsRomanization(text) else { return [:] }
+        let cfStr = text as CFString
+        let range = CFRangeMake(0, CFStringGetLength(cfStr))
+        let locale = Locale(identifier: "ja") as CFLocale
+        guard let tokenizer = CFStringTokenizerCreate(nil, cfStr, range, kCFStringTokenizerUnitWord, locale) else { return [:] }
+        let ns = text as NSString
+        var rawTokens: [(raw: String, latin: String)] = []
+
+        while CFStringTokenizerAdvanceToNextToken(tokenizer) != [] {
+            let tokRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            let rawTok = ns.substring(with: NSRange(location: tokRange.location, length: tokRange.length))
+            guard !rawTok.isEmpty, needsRomanization(rawTok) else { continue }
+            rawTokens.append((rawTok, transcribeJapaneseToken(rawTok: rawTok, tokenizer: tokenizer)))
+        }
+
+        var map: [String: String] = [:]
+        for idx in 0..<rawTokens.count {
+            let cur = rawTokens[idx]
+            var cleaned = cleanSokuon(cur.latin)
+            if cur.latin.hasSuffix("~tsu") && idx + 1 < rawTokens.count {
+                let nextCleaned = cleanSokuon(rawTokens[idx + 1].latin)
+                if let first = nextCleaned.first, "bcdfghjklmnpqrstvwxyz".contains(first.lowercased()) {
+                    cleaned = String(cur.latin.dropLast(4))
+                    if cur.raw.hasSuffix("っ") || cur.raw.hasSuffix("ッ") {
+                        let stemKey = String(cur.raw.dropLast())
+                        if !stemKey.isEmpty && map[stemKey] == nil {
+                            map[stemKey] = cleaned
+                        }
+                    }
+                }
+            }
+            if !cleaned.isEmpty && map[cur.raw] == nil {
+                map[cur.raw] = cleaned
+            }
+        }
+        return map
+    }
+
     private static func romanizeJapanese(_ text: String) -> String {
         let cfStr = text as CFString
         let range = CFRangeMake(0, CFStringGetLength(cfStr))
         let locale = Locale(identifier: "ja") as CFLocale
-        let tokenizer = CFStringTokenizerCreate(nil, cfStr, range, kCFStringTokenizerUnitWord, locale)
+        guard let tokenizer = CFStringTokenizerCreate(nil, cfStr, range, kCFStringTokenizerUnitWord, locale) else { return text }
 
         var out = ""
         var lastEnd = 0
+        var pendingSokuon = false
+        var prevRawTok = ""
         let ns = text as NSString
+        let verbSuffixes: Set<String> = ["て", "た", "で", "ます", "ました", "ません", "ない", "なかった", "たい"]
+        let standaloneParticles: Set<String> = ["は", "が", "を", "に", "へ", "と", "の", "も", "か", "や"]
 
         while CFStringTokenizerAdvanceToNextToken(tokenizer) != [] {
             let tokRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
-            if tokRange.location > lastEnd {
+            let hadGap = tokRange.location > lastEnd
+            if hadGap {
                 let gap = ns.substring(with: NSRange(location: lastEnd, length: tokRange.location - lastEnd))
                 out += gap
+                pendingSokuon = false
+                prevRawTok = ""
             }
 
             let rawTok = ns.substring(with: NSRange(location: tokRange.location, length: tokRange.length))
-            let tokenLatin: String
-            if let attr = CFStringTokenizerCopyCurrentTokenAttribute(tokenizer, kCFStringTokenizerAttributeLatinTranscription) as? String {
-                tokenLatin = cfTransform(attr, transform: kCFStringTransformStripDiacritics)
-            } else {
-                let l = cfTransform(rawTok, transform: kCFStringTransformToLatin)
-                tokenLatin = cfTransform(l, transform: kCFStringTransformStripDiacritics)
+            var tokenLatin = transcribeJapaneseToken(rawTok: rawTok, tokenizer: tokenizer)
+
+            var willPendSokuon = false
+            if tokenLatin.hasSuffix("~tsu") || rawTok.hasSuffix("っ") || rawTok.hasSuffix("ッ") {
+                if tokenLatin.hasSuffix("~tsu") {
+                    tokenLatin = String(tokenLatin.dropLast(4))
+                    willPendSokuon = true
+                }
             }
 
-            let cleanedTok = cleanSokuon(tokenLatin)
-            if needsRomanization(rawTok) {
+            var cleanedTok = cleanSokuon(tokenLatin)
+            var joinedWithoutSpace = false
+            if pendingSokuon, let first = cleanedTok.first, "bcdfghjklmnpqrstvwxyz".contains(first.lowercased()) {
+                let dbl = (first == "c" || first == "C") ? "t" : String(first)
+                cleanedTok = dbl + cleanedTok
+                joinedWithoutSpace = true
+            } else if !hadGap && !prevRawTok.isEmpty && !standaloneParticles.contains(prevRawTok) {
+                if verbSuffixes.contains(rawTok) || (prevRawTok == "い" && rawTok == "た") || (prevRawTok == "て" && rawTok == "い") {
+                    if !(prevRawTok == "て" && rawTok == "い") {
+                        joinedWithoutSpace = true
+                    }
+                }
+            }
+            pendingSokuon = willPendSokuon
+            prevRawTok = rawTok
+
+            if needsRomanization(rawTok) && !joinedWithoutSpace {
                 if let last = out.last, (last.isLetter || last.isNumber),
                    let first = cleanedTok.first, (first.isLetter || first.isNumber) {
                     out += " "
@@ -125,6 +407,9 @@ enum TextRomanizer {
             lastEnd = tokRange.location + tokRange.length
         }
 
+        if pendingSokuon {
+            out += "tsu"
+        }
         if lastEnd < ns.length {
             out += ns.substring(from: lastEnd)
         }

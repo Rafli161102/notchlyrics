@@ -1,40 +1,36 @@
-# NotchLyrics web notch
+# NotchLyrics Web Overlay
 
-Browser-rendered notch UI for **Windows Chrome, Brave, Edge, Firefox, and other browsers**. No build step and no external scripts.
+Standalone browser-rendered Notch overlay (`notch.html`, `notch.css`, `notch.js`) with zero build steps or external runtime dependencies.
 
-Open `notch.html`, or embed it in a browser extension, local web app, or native host. This page is **not by itself an OS-level always-on-top overlay**: a browser page cannot draw above every Windows app or read system-wide Now Playing on another app. Use a Chrome/Brave extension or native companion host for OS integration; the UI itself is browser-based.
+## Features
+- Golden Ratio (`phi = 1.618`) proportions (`336x48` collapsed -> `544x110` expanded across `attachedBezel`, `floatingIsland`, and `edgeDockStrip` variants).
+- Pure `#000000` OLED black background; `accentColor` and `backingColor` tint only lyric highlights, backing vocals, and progress bar elements.
+- Multi-line wrapping with automatic font scaling (`applyAutoFitFont`) so long lyrics fit cleanly without ellipsis truncation.
+- Live `MM:SS / MM:SS` playback readout (`tabular-nums`) and transport buttons in the hover-expanded panel.
+- Respects `prefers-reduced-motion`.
 
-## UI contract
+## JS Contract
 
 ```js
 window.NotchLyrics.update({
-  mainText: '...',
-  backingText: '...',
-  title: '...',
-  trackTitle: '...',
-  artist: '...',
-  album: '...',
+  style: 'attachedBezel', // 'attachedBezel' | 'floatingIsland' | 'edgeDockStrip'
+  mainText: 'Current lyric line',
+  backingText: 'Ooh',
+  title: 'Song Title',
+  artist: 'Artist Name',
+  album: 'Album Name',
   artworkUrl: 'https://...',
+  accentColor: '#f4d06f',
   isPlaying: true,
-  progress: 0.48, // or songProgress
-  songProgress: 0.48
+  elapsedTime: 84,
+  duration: 248,
+  songProgress: 0.34,
+  lineProgress: 0.55
 });
 
 window.NotchLyrics.onCommand((command) => {
-  // previous, togglePlayPause, next
+  // 'previous' | 'togglePlayPause' | 'next'
 });
 ```
 
-Or `postMessage`:
-
-```js
-targetWindow.postMessage({
-  source: 'notchlyrics',
-  type: 'state',
-  state: { mainText: '...', title: '...', artist: '...', album: '...' }
-}, '*');
-```
-
-Commands are emitted as `{ source: 'notchlyrics', type: 'command', command }`, a `notchlyrics-command` `CustomEvent`, and to `onCommand` listeners.
-
-Hover or keyboard-focus the notch to expand. Native buttons handle click, Enter, Space, and visible focus. `prefers-reduced-motion` disables transitions. Empty data is not replaced with fabricated metadata.
+Frames or host wrappers can also send `postMessage({ source: 'notchlyrics', type: 'state', state })`.

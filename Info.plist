@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>TouchBarLyrics membaca energi vokal dari audio sistem untuk menyinkronkan lirik lagu secara otomatis tanpa input manual.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>TouchBarLyrics optionally reads Now Playing metadata from Safari, Music, or Spotify when MediaRemoteAdapter is unavailable.</string>
 	<key>NSSupportsSuddenTermination</key>
 	<true/>
 </dict>

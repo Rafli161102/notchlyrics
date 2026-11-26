@@ -48,6 +48,29 @@ enum NotchTests {
             "secondary display uses its own frame"
         )
 
+        // Adaptive bezel/floating/strip notch geometry checks
+        let attachedFlat = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: false, style: .attachedBezel, physicalNotchInset: 0)
+        check(attachedFlat.maxY == screen.maxY, "attachedBezel sits flush at top screen bezel (maxY == screen.maxY)")
+
+        let floatingFlat = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: false, style: .floatingIsland, physicalNotchInset: 0)
+        check(floatingFlat.maxY == screen.maxY - 8, "floatingIsland floats 8pt below top edge on flat screens")
+
+        let stripFlat = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: false, style: .edgeDockStrip, physicalNotchInset: 0)
+        check(stripFlat.maxY == screen.maxY && stripFlat.width > attachedFlat.width, "edgeDockStrip spans wide flush strip at top bezel")
+
+        let attachedNotch = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: false, style: .attachedBezel, physicalNotchInset: 34)
+        check(attachedNotch.maxY == screen.maxY && attachedNotch.height > 34, "attachedBezel clears physical notch chin below safeAreaTop=34")
+
+        let expAttached = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: true, style: .attachedBezel, physicalNotchInset: 0)
+        let ratioW = expAttached.width / attachedFlat.width
+        check(abs(ratioW - NotchGeometry.phi) < 0.02, "expanded bezel width scales by Golden Ratio (phi)")
+
+        let expFloating = NotchGeometry.adaptiveFrame(screenFrame: screen, expanded: true, style: .floatingIsland, physicalNotchInset: 0)
+        let ratioFloatW = expFloating.width / floatingFlat.width
+        check(abs(ratioFloatW - NotchGeometry.phi) < 0.02, "expanded floating island width scales by Golden Ratio (phi)")
+
+        check(attachedFlat.height >= 46 && floatingFlat.height >= 46 && stripFlat.height >= 44, "collapsed notch styles reserve >= 44-48pt height for multi-line lyrics without truncation")
+
         if failures > 0 {
             print("\(failures) failing test(s)")
             exit(1)

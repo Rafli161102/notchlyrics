@@ -1,0 +1,54 @@
+name: Cross-Platform Build and Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  macos-build-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Swift Notch & Core Engine tests
+        run: ./tests/run.sh
+      - name: Build Universal macOS app bundle & archive
+        run: ./build.sh --universal --package
+      - name: Upload macOS build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TouchBarLyrics-macOS-Universal
+          path: .build/*.zip
+
+  windows-engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Windows Lyrics Engine unit tests
+        run: |
+          cd windows
+          npm test
+
+  windows-package:
+    runs-on: windows-latest
+    needs: windows-engine-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Windows desktop dependencies & package installer
+        run: |
+          cd windows
+          npm install
+          npm test
+          npx electron-builder --win --x64
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotchLyrics-Windows-x64
+          path: windows/dist/*.exe

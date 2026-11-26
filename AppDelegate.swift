@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
 
     private var adapterProcess: Process?
     private var adapterPipe: Pipe?
+    private var appleEventsPollTimer: Timer?
+    private var isUsingNativePoller = false
     private let streamQueue = DispatchQueue(label: "com.user.TouchBarLyrics.stream", qos: .utility)
     private var lineBuffer = Data()
 
@@ -105,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var activeLyrics: [LyricLine] = []
     private var lyricsSourceName = ""
     private var isEstimatedLyrics = false
+    private var hasExactWordTimings = false
     private var isFetchingLyrics = false
     private var lyricsStatusText = "Putar lagu di Safari"
     private var autoVocalOffset: TimeInterval = 0
@@ -156,15 +159,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
 
     private var displayMode: DisplayMode {
         get {
-            guard let raw = defaults.string(forKey: keyDisplayMode),
-                  let mode = DisplayMode(rawValue: raw) else { return .defaultMode }
-            return mode
+            if let raw = defaults.string(forKey: keyDisplayMode),
+               let mode = DisplayMode(rawValue: raw) {
+                return mode
+            }
+            // Auto-select Notch on MacBooks with a physical camera housing (no Touch Bar)
+            if let screen = NSScreen.main ?? NSScreen.screens.first, screen.safeAreaInsets.top > 0 {
+                return .notch
+            }
+            return .defaultMode
         }
         set { defaults.set(newValue.rawValue, forKey: keyDisplayMode) }
     }
 
-    private let adapterScript = "/Applications/Atoll.app/Contents/Resources/mediaremote-adapter.pl"
-    private let adapterFramework = "/Applications/Atoll.app/Contents/Resources/MediaRemoteAdapter.framework"
+    private lazy var resolvedAdapterPaths: (script: String, framework: String)? = {
+        let fm = FileManager.default
+        var candidates: [(String, String)] = []
+        if let resPath = Bundle.main.resourcePath {
+            candidates.append((
+                (resPath as NSString).appendingPathComponent("mediaremote-adapter.pl"),
+                (resPath as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
+            ))
+        }
+        let appSup = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/TouchBarLyrics/MediaRemoteAdapter")
+        candidates.append((
+            (appSup as NSString).appendingPathComponent("mediaremote-adapter.pl"),
+            (appSup as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
+        ))
+        candidates.append((
+            "/Applications/Atoll.app/Contents/Resources/mediaremote-adapter.pl",
+            "/Applications/Atoll.app/Contents/Resources/MediaRemoteAdapter.framework"
+        ))
+        return candidates.first { fm.isExecutableFile(atPath: $0.0) && fm.fileExists(atPath: $0.1) }
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -187,10 +214,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         }
 
         vocalSync.onAutoOffsetUpdated = { [weak self] leadOffset, backingOffset, message in
-            self?.autoVocalOffset = leadOffset
-            self?.autoBackingOffset = backingOffset
+            guard let self = self else { return }
+            self.autoVocalOffset = leadOffset
+            self.autoBackingOffset = backingOffset
+            if !self.currentTrackKey.isEmpty && !self.activeLyrics.isEmpty && !self.isEstimatedLyrics {
+                self.fetcher.updateCalibration(
+                    forKey: self.currentTrackKey,
+                    rawTitle: self.currentState.title,
+                    rawArtist: self.currentState.artist,
+                    leadOffset: leadOffset,
+                    backingOffset: backingOffset,
+                    bpm: self.vocalSync.currentBPM()
+                )
+            }
             NSLog("[TouchBarLyrics] vocal lead=%.2f backing=%.2f status=%@", leadOffset, backingOffset, message)
-            self?.refreshDisplay()
+            self.refreshDisplay()
         }
 
         startMediaStream()
@@ -333,17 +371,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         applyDisplayMode()
     }
 
-    // MARK: - MediaRemote Stream
+    // MARK: - MediaRemote Stream & Zero-Dependency Native macOS Fallback
 
     private func startMediaStream() {
-        guard FileManager.default.isExecutableFile(atPath: adapterScript) else {
-            lyricsStatusText = "MediaRemote adapter tidak tersedia"
+        guard let paths = resolvedAdapterPaths else {
+            isUsingNativePoller = true
+            startNativeAppleScriptPoller()
             return
         }
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        proc.arguments = [adapterScript, adapterFramework, "stream", "--debounce=50"]
+        proc.arguments = [paths.script, paths.framework, "stream", "--debounce=10"]
 
         let pipe = Pipe()
         proc.standardOutput = pipe
@@ -365,11 +404,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             adapterProcess = proc
             adapterPipe = pipe
         } catch {
-            lyricsStatusText = "Gagal membaca pemutar media"
+            isUsingNativePoller = true
+            startNativeAppleScriptPoller()
         }
     }
 
     private func stopMediaStream() {
+        appleEventsPollTimer?.invalidate()
+        appleEventsPollTimer = nil
         adapterPipe?.fileHandleForReading.readabilityHandler = nil
         if let proc = adapterProcess, proc.isRunning {
             let pid = proc.processIdentifier
@@ -386,15 +428,126 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         adapterPipe = nil
     }
 
+    private func startNativeAppleScriptPoller() {
+        lyricsStatusText = "Menunggu pemutar media (Music/Spotify/Safari)..."
+        appleEventsPollTimer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
+            self?.pollNativePlayersOnce()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        appleEventsPollTimer = t
+        pollNativePlayersOnce()
+    }
+
+    private func pollNativePlayersOnce() {
+        let safariOnly = safariOnlyEnabled
+        streamQueue.async { [weak self] in
+            let script = """
+            on run
+              set sep to "|||"
+              if not \(safariOnly ? "true" : "false") then
+                if application "Spotify" is running then
+                  tell application "Spotify"
+                    set ps to player state as string
+                    if ps is "playing" then
+                      return "com.spotify.client" & sep & "playing" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track) & sep & ((duration of current track) / 1000.0) & sep & (player position)
+                    end if
+                  end tell
+                end if
+                if application "Music" is running then
+                  tell application "Music"
+                    set ps to player state as string
+                    if ps is "playing" then
+                      return "com.apple.Music" & sep & "playing" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track) & sep & (duration of current track) & sep & (player position)
+                    end if
+                  end tell
+                end if
+              end if
+              if application "Safari" is running then
+                tell application "Safari"
+                  if (count of windows) > 0 then
+                    try
+                      set t to current tab of front window
+                      set jsRes to do JavaScript "(function(){var m=Array.from(document.querySelectorAll('video,audio')).find(function(x){return !x.paused && x.duration>0;})||document.querySelector('video,audio');var md=(navigator.mediaSession&&navigator.mediaSession.metadata)||{};if(!m)return '';return [m.paused?'paused':'playing', md.title||document.title||'', md.artist||'', md.album||'', m.duration||0, m.currentTime||0].join('|||');})()" in t
+                      if jsRes is not "" then return "com.apple.Safari" & sep & jsRes
+                    end try
+                  end if
+                end tell
+              end if
+              return ""
+            end run
+            """
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", script]
+            let outPipe = Pipe()
+            proc.standardOutput = outPipe
+            proc.standardError = FileHandle.nullDevice
+            do {
+                try proc.run()
+                let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                proc.waitUntilExit()
+                guard let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !raw.isEmpty else {
+                    return
+                }
+                let parts = raw.components(separatedBy: "|||")
+                guard parts.count >= 7 else { return }
+                let payload: [String: Any] = [
+                    "bundleIdentifier": parts[0],
+                    "parentApplicationBundleIdentifier": parts[0],
+                    "playing": parts[1] == "playing",
+                    "title": parts[2],
+                    "artist": parts[3],
+                    "album": parts[4],
+                    "duration": Double(parts[5]) ?? 0,
+                    "elapsedTime": Double(parts[6]) ?? 0,
+                    "playbackRate": 1.0
+                ]
+                DispatchQueue.main.async {
+                    self?.applyPayload(payload, isDiff: false)
+                }
+            } catch {
+                return
+            }
+        }
+    }
+
     private func sendPlayPauseCommand() {
         sendMediaRemoteCommand(2)
     }
 
     private func sendMediaRemoteCommand(_ command: Int) {
-        DispatchQueue.global(qos: .userInitiated).async { [adapterScript, adapterFramework] in
+        if let paths = resolvedAdapterPaths {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+                proc.arguments = [paths.script, paths.framework, "send", "\(command)"]
+                proc.standardOutput = FileHandle.nullDevice
+                proc.standardError = FileHandle.nullDevice
+                try? proc.run()
+                proc.waitUntilExit()
+            }
+            return
+        }
+
+        let bundle = currentState.parentBundleID.isEmpty ? currentState.bundleID : currentState.parentBundleID
+        DispatchQueue.global(qos: .userInitiated).async {
+            let script: String
+            if bundle == "com.spotify.client" {
+                let verb = (command == 4) ? "next track" : (command == 5 ? "previous track" : "playpause")
+                script = "tell application \"Spotify\" to \(verb)"
+            } else if bundle == "com.apple.Music" {
+                let verb = (command == 4) ? "next track" : (command == 5 ? "previous track" : "playpause")
+                script = "tell application \"Music\" to \(verb)"
+            } else {
+                let jsCmd = (command == 2) ? "(function(){var m=document.querySelector('video,audio');if(m){if(m.paused)m.play();else m.pause();}})()" : ""
+                guard !jsCmd.isEmpty else { return }
+                script = "tell application \"Safari\" to do JavaScript \"\(jsCmd)\" in current tab of front window"
+            }
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-            proc.arguments = [adapterScript, adapterFramework, "send", "\(command)"]
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", script]
             proc.standardOutput = FileHandle.nullDevice
             proc.standardError = FileHandle.nullDevice
             try? proc.run()
@@ -525,22 +678,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         refreshDisplay()
     }
 
-    private func loadLyrics(for state: NowPlayingState) {
+    private func loadLyrics(for state: NowPlayingState, forceRefresh: Bool = false) {
         let key = state.trackKey
         fetcher.fetchLyrics(
             cacheKey: key,
             rawTitle: state.title,
             rawArtist: state.artist,
-            duration: state.duration
+            album: state.album,
+            duration: state.duration,
+            forceRefresh: forceRefresh
         ) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self, self.currentTrackKey == key else { return }
+                let isUpgradeForSameTrack = !self.activeRawLyrics.isEmpty
                 self.isFetchingLyrics = false
                 self.activeRawLyrics = result.lines
                 self.activeRomanizedLyrics = result.romanizedLines
                 self.applyLyricsPreference()
                 self.lyricsSourceName = result.sourceName
                 self.isEstimatedLyrics = result.isEstimated
+                self.hasExactWordTimings = result.hasWordTimings
+                // Immediately restore persisted audio sync calibration for previously played songs (< 1ms!)
+                if !isUpgradeForSameTrack && !forceRefresh && (result.calibratedLeadOffset != 0 || result.calibratedBackingOffset != 0) {
+                    self.autoVocalOffset = result.calibratedLeadOffset
+                    self.autoBackingOffset = result.calibratedBackingOffset
+                }
                 if result.lines.isEmpty && !self.currentState.title.isEmpty {
                     let cleanT = self.fetcher.cleanTitle(self.currentState.title)
                     let cleanA = self.fetcher.cleanArtist(self.currentState.artist)
@@ -609,7 +771,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var renderTimerInterval: TimeInterval = 0
 
     private func startRenderTimer() {
-        let desiredInterval: TimeInterval = (isModalPresented || displayMode.showsNotch) ? 0.03 : 0.12
+        let desiredInterval: TimeInterval = (displayMode == .hidden) ? 0.12 : 0.0167
         if renderTimer != nil && abs(renderTimerInterval - desiredInterval) < 0.005 {
             return
         }
@@ -642,9 +804,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private func refreshDisplay() {
         let activeTheme = ThemeStore.shared.activeTheme
         let rawElapsed = currentState.currentElapsed()
-        let displayLead: TimeInterval = currentState.playing ? 0.08 : 0.0
+        // Real-time ~110ms display lookahead cancels MediaRemote + CoreAudio + LCD Touch Bar frame latency
+        let displayLead: TimeInterval = currentState.playing ? 0.11 : 0.0
         let elapsed = rawElapsed + autoVocalOffset + activeTheme.karaokeOffsetSeconds + displayLead
-        let wordScale = Double(activeTheme.wordSpeedScale)
+        // When line-level LRC lacks millisecond word timings, adapt speed dynamically to track BPM + live vocal phrasing
+        let liveBPMFactor = (!hasExactWordTimings && autoVocalSyncEnabled && vocalSync.isTapActive)
+            ? vocalSync.realtimeDeliveryTempoScale()
+            : 1.0
+        let wordScale = Double(activeTheme.wordSpeedScale) * liveBPMFactor
         let songProg: CGFloat = currentState.duration > 0
             ? CGFloat(min(max(0, rawElapsed / currentState.duration), 1))
             : 0
@@ -692,6 +859,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let liveBackingEnergy: CGFloat = (currentState.playing && autoVocalSyncEnabled && vocalSync.isTapActive)
             ? CGFloat(vocalSync.currentNormalizedBackingEnergy())
             : liveVocalEnergy
+        let liveVocalIntonation: CGFloat = (currentState.playing && autoVocalSyncEnabled && vocalSync.isTapActive)
+            ? CGFloat(vocalSync.currentVocalIntonation())
+            : 0.45
+        let liveVocalOnset: CGFloat = (currentState.playing && autoVocalSyncEnabled && vocalSync.isTapActive)
+            ? CGFloat(vocalSync.currentSyllableOnset())
+            : 0.0
 
         let songPalette = artworkColorsEnabled ? artworkPalette : nil
 
@@ -704,6 +877,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             backingLineProgress: backProg,
             vocalEnergy: liveVocalEnergy,
             backingVocalEnergy: liveBackingEnergy,
+            vocalIntonation: liveVocalIntonation,
+            vocalOnset: liveVocalOnset,
             isPlaying: currentState.playing,
             isVocalSynced: autoVocalSyncEnabled && vocalSync.isTapActive,
             songPalette: songPalette
@@ -719,12 +894,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
                 backingLineProgress: backProg,
                 vocalEnergy: liveVocalEnergy,
                 backingVocalEnergy: liveBackingEnergy,
+                vocalIntonation: liveVocalIntonation,
+                vocalOnset: liveVocalOnset,
                 isPlaying: currentState.playing,
                 isVocalSynced: autoVocalSyncEnabled && vocalSync.isTapActive,
                 songPalette: songPalette,
                 artist: fetcher.cleanArtist(currentState.artist),
                 album: currentState.album,
-                artworkData: currentState.artworkData.isEmpty ? nil : currentState.artworkData
+                artworkData: currentState.artworkData.isEmpty ? nil : currentState.artworkData,
+                elapsedTime: rawElapsed,
+                duration: currentState.duration
             )
         }
     }
@@ -745,6 +924,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let srcItem = NSMenuItem(title: srcStr, action: nil, keyEquivalent: "")
         srcItem.isEnabled = false
         mainMenu.addItem(srcItem)
+
+        let durMins = Int(currentState.duration) / 60
+        let durSecs = Int(currentState.duration) % 60
+        let bpmVal = Int(vocalSync.currentBPM().rounded())
+        let tempoStr = String(
+            format: "Tempo: %@ | Panjang: %02d:%02d | Word Speed: %.2fx",
+            bpmVal >= 55 ? "\(bpmVal) BPM" : "Membaca BPM...",
+            durMins, durSecs,
+            ThemeStore.shared.activeTheme.wordSpeedScale
+        )
+        let tempoItem = NSMenuItem(title: tempoStr, action: nil, keyEquivalent: "")
+        tempoItem.isEnabled = false
+        mainMenu.addItem(tempoItem)
 
         let syncLabel = autoVocalSyncEnabled ? vocalSync.statusDescription : "Auto-Sync Vokal: Nonaktif"
         let syncInfo = NSMenuItem(title: syncLabel, action: nil, keyEquivalent: "")
@@ -770,6 +962,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         displayParent.submenu = displayMenu
         mainMenu.addItem(displayParent)
 
+        let notchStyleMenu = NSMenu()
+        for ns in ThemeNotchStyle.allCases {
+            let item = NSMenuItem(title: ns.displayName, action: #selector(selectNotchStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ns.rawValue
+            item.state = (ThemeStore.shared.activeTheme.notchStyle == ns) ? .on : .off
+            notchStyleMenu.addItem(item)
+        }
+        let notchParent = NSMenuItem(title: "Gaya Notch: \(ThemeStore.shared.activeTheme.notchStyle.displayName)", action: nil, keyEquivalent: "")
+        notchParent.submenu = notchStyleMenu
+        mainMenu.addItem(notchParent)
+
         let autoItem = NSMenuItem(title: "Otomatis Muncul Saat Memutar", action: #selector(toggleAutoShow), keyEquivalent: "a")
         autoItem.target = self
         autoItem.state = autoShowEnabled ? .on : .off
@@ -788,6 +992,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let resetSyncItem = NSMenuItem(title: "Reset Offset Auto-Sync Vokal", action: #selector(resetAutoSyncOffset), keyEquivalent: "")
         resetSyncItem.target = self
         mainMenu.addItem(resetSyncItem)
+
+        let refreshLyricsItem = NSMenuItem(title: "Cari Ulang Lirik Online (Lewati Cache)", action: #selector(forceRefreshLyrics), keyEquivalent: "r")
+        refreshLyricsItem.target = self
+        refreshLyricsItem.isEnabled = !currentState.title.isEmpty
+        mainMenu.addItem(refreshLyricsItem)
 
         let nudgeAheadItem = NSMenuItem(title: "Majukan Timing Lirik (+0.25s)", action: #selector(nudgeLyricsAhead), keyEquivalent: "]")
         nudgeAheadItem.target = self
@@ -901,6 +1110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         refreshDisplay()
     }
 
+    @objc private func forceRefreshLyrics() {
+        guard !currentState.title.isEmpty else { return }
+        fetcher.clearCacheEntry(forKey: currentTrackKey, rawTitle: currentState.title, rawArtist: currentState.artist)
+        isFetchingLyrics = true
+        lyricsSourceName = "Mencari online..."
+        refreshDisplay()
+        loadLyrics(for: currentState, forceRefresh: true)
+    }
+
     @objc private func nudgeLyricsAhead() {
         adjustUserKaraokeOffset(by: 0.25)
     }
@@ -922,6 +1140,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     @objc private func selectQuickTheme(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         ThemeStore.shared.selectTheme(id: id)
+    }
+
+    @objc private func selectNotchStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let ns = ThemeNotchStyle(rawValue: raw) else { return }
+        var t = ThemeStore.shared.activeTheme
+        if t.isBuiltIn {
+            t = ThemeStore.shared.duplicateTheme(t, newName: "\(t.name) Custom")
+        }
+        t.notchStyle = ns
+        ThemeStore.shared.upsertTheme(t, makeActive: true)
     }
 
     @objc private func openThemeEditor() {

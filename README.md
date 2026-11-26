@@ -1,113 +1,146 @@
-# TouchBarLyrics
+# NotchLyrics (`TouchBarLyrics`)
 
-Lirik lagu tersinkronisasi untuk **macOS Touch Bar** atau **top-center Notch overlay**, terutama audio yang dimainkan dari **Safari**. Aplikasi membaca Now Playing lewat `mediaremote-adapter`, mengambil lirik sinkronisasi dari sumber online, memisahkan vokal utama dan *backing vocal*, menyediakan romanisasi, serta menyinkronkan waktu lirik dengan energi vokal audio sistem.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform: macOS 14.2+ | Windows 10/11](https://img.shields.io/badge/Platform-macOS%2014.2%2B%20%7C%20Windows%2010%2F11-black)
 
-## Persyaratan
+Real-time synchronized karaoke lyrics for the **macOS Touch Bar**, **macOS Top-Center Notch Overlay**, **Windows 10/11 Desktop Notch Overlay**, and **Chromium/Edge/Brave Browser Extension**.
 
-- macOS **14.2+**. Touch Bar memakai `DFRFoundation`; mode Notch memakai `NSPanel` dan juga bisa dipakai pada Mac tanpa physical notch.
-- **Xcode Command Line Tools**: `xcode-select --install`.
-- **Atoll** terpasang di `/Applications/Atoll.app`, dengan:
-  - `Contents/Resources/mediaremote-adapter.pl`
-  - `Contents/Resources/MediaRemoteAdapter.framework`
-- Akses **System Audio Recording / System Audio** bila memakai auto-sync vokal.
-- Koneksi internet untuk pencarian lirik. LRCLIB dan NetEase dicoba paralel, dengan fallback Lyrics.ovh; lirik tanpa timing memakai estimasi.
-- Default sumber hanya **Safari**, tetapi dapat dimatikan di menu.
+Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure OLED `#000000` black surfaces**, **album-matched adaptive text colors**, **multi-line zero-truncation Notch rendering**, and **real-time vocal intonation & BPM audio auto-sync**.
 
-Dependency runtime Atoll saat ini masih hard-coded; aplikasi tidak mengunduh atau memasangnya sendiri.
+---
 
-## Build lokal
+## Key Features
 
-```sh
-cd /Users/macbookpro/bin/TouchBarLyricsSrc
-./build.sh
-```
+### Cross-Platform Outputs
+- **macOS Touch Bar (`macOS 14.2+`)**: Native `NSTouchBar` system tray item & live interactive karaoke strip (`DFRFoundation`), zero Xcode project required.
+- **macOS Top-Center Notch (`macOS 14.2+`)**: Transparent always-on-top `NSPanel` visible across all Spaces and full-screen apps with zero focus stealing. Automatically adapts to **Attached Bezel**, **Floating Dynamic Island**, or **Wide Edge Dock Strip**, and automatically selects Notch mode on Apple Silicon / notched MacBooks without a Touch Bar.
+- **Windows 10 / 11 Desktop App (`windows/`)**: Frameless, transparent always-on-top Electron overlay powered by built-in Windows WinRT `GlobalSystemMediaTransportControls` (`win_smtc.ps1`), reading Spotify, YouTube Music, Chrome, Edge, Brave, Firefox, Apple Music, and VLC system-wide without extra native drivers.
+- **Zero-Build Browser Extension (`windows/browser-extension/`)**: Manifest V3 extension for Chrome, Edge, and Brave adding an OLED Golden Ratio lyrics notch on YouTube, YouTube Music, Spotify Web, SoundCloud, and Apple Music.
 
-Output ada di:
+### Real-Time Lyrics & Vocal Synchronization
+- **Fast Progressive Multi-Source Search**: Queries **LRCLIB** (`/api/get`, `/api/search`, full-text `?q=`) and **NetEase Cloud Music** (`YRC` word-level & `LRC`) concurrently with immediate early display, stale request cancellation, **iTunes Search API** metadata normalization for messy YouTube/Safari uploads, and **Lyrics.ovh** plain-text fallback.
+- **Strict Track Accuracy & Persistent Offline Cache**: Scores duration match, cross-script romanized token similarity, and line coverage while rejecting wrong covers, sped-up/slowed/remix mismatches unless explicitly requested. Persists fetched lyrics, detected BPM, and lead/backing calibration offsets in local cache (`~/Library/Application Support/TouchBarLyrics/LyricsCache` on macOS, `%APPDATA%\NotchLyrics\LyricsCache` on Windows).
+- **Real-Time CoreAudio DSP Auto-Sync (macOS)**: Taps system audio (`300–3400 Hz` mid/side vocal separation) to align lead & backing vocal timing within milliseconds, detect track BPM continuously, track live vocal pitch brightness (`vocalIntonation`) and syllable attack bursts (`vocalOnset`), and fall back seamlessly to timestamp playback if system audio permission is declined.
+- **Intonation-Reactive Karaoke Choreography**: Smooth 60 FPS word-by-word & syllable sweep with anticipatory pre-glow, pitch/onset-scaled vertical syllable lift, dual-layer outgoing cross-dissolve line transitions, independent call-and-response backing vocals, and a real-time glowing progress bead.
+
+### Multi-Language Script & Romaji Support
+- **Japanese**: Context-aware `CFStringTokenizer` phrase transcription handling grammar particles (`は` -> `wa`, `へ` -> `e`, `を` -> `o`), cross-token sokuon gemination (`待っていた` -> `matte ita`, `知った` -> `shitta`), long vowel macrons/chōonpu (`コーヒー` -> `koohii`), and YRC word fragment alignment.
+- **Korean**: Algorithmic Unicode Hangul Revised Romanization supporting consonant liaison and lateral assimilation (`사랑해요 괜찮아 빨리` -> `saranghaeyo gwaenchana ppalli`).
+- **Mandarin Chinese, Cyrillic (Russian), Arabic/Hebrew RTL & Indic/Thai**: Clean Cyrillic transliteration (`Привет мир любовь` -> `Privet mir lyubov`), automatic `.rightToLeft` direction for Arabic/Hebrew, and word-cluster grouping preserving cursive ligatures and stacked vowel marks in Arabic, Hindi, and Thai.
+
+### Visual Polish & Customization
+- **Pure OLED Black + Album Text Colors**: Dark themes keep `#000000` pure black backgrounds untouched while tinting lyric text, active highlights, backing vocals, and progress accents from album artwork with enforced WCAG AA (`>= 4.5:1`) contrast.
+- **Zero-Truncation Multiline Notch**: Automatically wraps lyrics cleanly across lines and steps font sizing smoothly inside Notch bounds without `...` ellipsis clipping.
+- **Hover-Expanded Notch Card**: Smoothly expands (`336x48` -> `544x110`) on hover/focus with artwork thumbnail, track title, artist/album metadata, live **`MM:SS / MM:SS`** playback timer, and native Previous / Play-Pause / Next controls.
+- **Studio Theme Editor (macOS)**: 4 built-in themes + unlimited custom JSON themes with controls for layout, alignment, fonts, word speed scale (`0.50x–2.00x`), offset (`-1.50s..+1.50s`), line transitions, animation curves, color sync mode, and `prefers-reduced-motion` support.
+
+---
+
+## Repository Structure
 
 ```text
-.build/TouchBarLyrics.app
+.
+├── AppDelegate.swift                # macOS menu bar app, Now Playing bridge & render loop
+├── DisplayMode.swift                # Touch Bar / Notch / Both / Hidden routing
+├── LyricsParserAndFetcher.swift     # LRCLIB + NetEase YRC + iTunes repair + disk cache
+├── NotchGeometry.swift              # Golden Ratio (phi) bezel/floating/strip notch geometry
+├── NotchLyricsWindowController.swift# Hover-expanding NSPanel notch overlay + timer UI
+├── TextRomanizerAndArtwork.swift    # Multi-script romanizer & album color palette extractor
+├── ThemeEditorWindow.swift          # Live 3-tab Studio Theme Customizer window
+├── ThemeModels.swift                # Codable theme definitions & WCAG contrast helpers
+├── TouchBarLyricsView.swift         # Dual-layer transitions, multiline wrap & 60fps renderer
+├── VocalAutoSyncEngine.swift        # CoreAudio Process Tap, BPM & intonation DSP engine
+├── build.sh                         # macOS reproducible compiler (--install, --universal, --package)
+├── notarize.sh                      # Apple Developer ID notarization & stapling helper
+├── Info.plist                       # App metadata & privacy usage descriptions
+├── tests/                           # Standalone macOS Swift test suites
+├── windows/                         # Windows 10/11 Electron app, WinRT SMTC & MV3 extension
+└── web/                             # Reusable standalone browser notch UI
 ```
 
-Build lalu pasang:
+---
 
+## Installation & Usage
+
+### macOS (`14.2+`, Apple Silicon & Intel)
+
+#### Zero-Dependency Portability
+`TouchBarLyrics.app` runs out of the box for any macOS user:
+1. If `MediaRemoteAdapter.framework` + `mediaremote-adapter.pl` is bundled inside `Contents/Resources/` (automatic when built with `./build.sh` on a machine that has it, or installed under `~/Library/Application Support/TouchBarLyrics/MediaRemoteAdapter/` / `/Applications/Atoll.app`), TouchBarLyrics streams system-wide Now Playing at ~10 ms debounce.
+2. If no external adapter is installed on the target Mac, TouchBarLyrics **automatically falls back to built-in macOS Apple Events**, reading playback directly from **Apple Music**, **Spotify**, and **Safari** active tabs with zero external apps required.
+
+#### Build & Install from Source
 ```sh
+git clone https://github.com/Rafli161102/notchlyrics.git
+cd notchlyrics
+
+# Run unit tests (Notch Geometry + Core Engine / Romanizer / OLED Contrast)
+./tests/run.sh
+
+# Build & install to ~/Applications/TouchBarLyrics.app
 ./build.sh --install
 ```
 
-Aplikasi terpasang di `~/Applications/TouchBarLyrics.app`. Jalankan/restart manual, atau bila memakai LaunchAgent yang sudah terpasang:
+Build flags:
+- `./build.sh` — builds `.build/TouchBarLyrics.app` for host architecture.
+- `./build.sh --install` — installs & re-signs into `~/Applications/TouchBarLyrics.app`.
+- `./build.sh --universal` — builds a fat Universal Mach-O binary (`arm64` + `x86_64`).
+- `./build.sh --package` — packages `.build/TouchBarLyrics-<version>-macOS.zip` for distribution.
 
-```sh
-launchctl kickstart -k "gui/$(id -u)/com.user.touchbarlyrics"
+Open `TouchBarLyrics.app`, grant **System Audio Recording** when prompted (optional, enables live CoreAudio vocal/intonation sync; declines gracefully fallback to timestamp sync), and play music in Safari, Music, or Spotify.
+
+---
+
+### Windows (`10 / 11`)
+
+#### Option 1: Always-On-Top Windows Desktop App (Spotify, Chrome, Edge, Apple Music, etc.)
+Requires [Node.js](https://nodejs.org/) 18+ (built-in Windows PowerShell WinRT handles SMTC media reading with no C++ compiler needed):
+
+```powershell
+cd windows
+npm install
+npm test
+npm start
 ```
 
-Versi diambil dari `VERSION`; nomor build dari `BUILD_NUMBER` atau variabel `BUILD_NUMBER`. `VERSION` dan `BUILD_NUMBER` dapat di-commit; tidak perlu menyimpan secret.
-
-## Signing
-
-Default memakai **ad-hoc** signing (`CODESIGN_IDENTITY=-`), cocok untuk penggunaan lokal, bukan distribusi publik.
-
-Untuk Developer ID:
-
-```sh
-CODESIGN_IDENTITY="Developer ID Application: Nama Anda (TEAMID)" ./build.sh
+Package Windows installer (`NotchLyrics Setup.exe` & portable `.exe` in `windows/dist/`):
+```powershell
+npm run dist:win
 ```
 
-Script memverifikasi signature dan mengaktifkan **hardened runtime + timestamp** untuk identitas selain ad-hoc. Tidak ada provisioning profile atau `.entitlements` khusus di repo.
+#### Option 2: Zero-Build Chrome / Edge / Brave Extension (`windows/browser-extension/`)
+1. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select the `windows/browser-extension` folder.
+4. Open YouTube, YouTube Music, Spotify Web, SoundCloud, or Apple Music to see the top-center OLED Notch overlay immediately.
 
-## Notarization
+See [windows/README.md](windows/README.md) and [web/README.md](web/README.md) for architecture and JS widget contract details.
 
-Notarization **tidak bisa dijalankan tanpa**:
-1. build yang di-sign **Developer ID Application**, bukan ad-hoc;
-2. kredensial Apple untuk `notarytool` (Apple ID + app-specific password, atau App Store Connect API key);
-3. akses internet ke Apple notary service.
+---
 
-Simpan kredensial sekali, tanpa menulisnya ke repo:
+## Signing & Notarization (macOS Public Releases)
+
+Default local builds use ad-hoc signing (`CODESIGN_IDENTITY=-`). For public macOS Gatekeeper distribution:
 
 ```sh
 xcrun notarytool store-credentials TouchBarLyricsNotary \
-  --apple-id "email@example.com" \
+  --apple-id "you@example.com" \
   --team-id "TEAMID" \
   --password "app-specific-password"
-```
 
-Kemudian:
-
-```sh
-CODESIGN_IDENTITY="Developer ID Application: Nama Anda (TEAMID)" ./build.sh
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh --universal --package
 NOTARY_PROFILE=TouchBarLyricsNotary ./notarize.sh
 ```
 
-`notarize.sh` membuat ZIP, mengirim `notarytool submit --wait`, `stapler staple`, dan validasi. Variabel `APP_PATH`, `NOTARY_PROFILE`, dan `ZIP_PATH` dapat diatur. App Store Connect API key juga didukung oleh `notarytool`, tetapi pemanggilan resminya tidak disimpan di script.
+---
 
-## Runtime
+## Testing & Verification
 
-- `mediaremote-adapter.pl ... stream --debounce=250` membaca Now Playing.
-- `send 2` dipakai untuk play/pause.
-- Sistem audio memakai `CATapDescription` + private aggregate device. Jika izin tidak diberikan, aplikasi **fallback ke timestamp** dan tetap menampilkan lirik.
-- `NSAudioCaptureUsageDescription` sudah ada di `Info.plist`.
-- Tema tersimpan di `~/Library/Application Support/TouchBarLyrics/themes.json`.
-- Bundle identifier `com.user.TouchBarLyrics`; `LSUIElement` aktif; single instance ditegakkan aplikasi.
-- Signal `SIGTERM`/`SIGINT`/`SIGHUP` dan shutdown sistem ditangani untuk menghentikan audio tap dan proses adapter.
+- **macOS Tests**: `./tests/run.sh` runs standalone Swift suites in [tests/NotchTests.swift](tests/NotchTests.swift) (`NotchGeometry`, `DisplayMode`) and [tests/CoreEngineTests.swift](tests/CoreEngineTests.swift) (scoring, caching, YRC/LRC sync, Japanese/Korean/Chinese/Cyrillic/Arabic script handling, OLED background lock, WCAG contrast, multiline auto-fit, intonation lift).
+- **Windows Engine Tests**: `cd windows && npm test` runs [windows/tests/lyrics-engine.test.js](windows/tests/lyrics-engine.test.js).
 
-## Fitur utama
+---
 
-- Mode tampilan **Touch Bar / Notch / Both / Hidden**; default tetap Touch Bar. Notch top-center transparent `NSPanel`, semua Spaces, no focus stealing, synthetic notch di Mac tanpa physical notch.
-- **Hover notch otomatis melebar:** lirik + artwork + judul + artist + album + kontrol sebelumnya/play-pause/berikutnya; mouse keluar mengecilkan kembali. Native macOS controls, keyboard-accessible, `prefers-reduced-motion` dihormati.
-- `web/notch.html` + `web/notch.css` + `web/notch.js`: browser-rendered notch UI untuk Windows Chrome/Brave/Edge/Firefox dan browser lain. Browser-only UI tidak otomatis menjadi OS always-on-top atau membaca system-wide Now Playing; butuh extension/native host. Lihat `web/README.md`.
-- Karaoke per huruf/per kata, main + backing vocal.
-- LRC/YRC + enhanced LRC + estimasi.
-- Romanisasi Jepang, Korea, China, dan script non-Latin lainnya.
-- Auto-sync vokal lead + backing.
-- Warna adaptif artwork + WCAG contrast guard.
-- Tema built-in/custom, layout, font, transisi, animation speed, reduced motion.
+## License
 
-## Test / verifikasi
-
-```sh
-./tests/run.sh                # unit test notch geometry + display-mode routing
-./build.sh                    # build + signing verification
-codesign --verify --deep --strict .build/TouchBarLyrics.app
-plutil -lint .build/TouchBarLyrics.app/Contents/Info.plist
-```
-
-Belum ada XCTest/CI penuh untuk parser, romanizer, timing, palette, fetch ranking, dan regression vocal sync; test notch saat ini memakai harness Swift standalone. Lihat `CHANGELOG.md`.
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for full details.
