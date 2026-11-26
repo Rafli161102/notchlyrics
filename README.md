@@ -92,6 +92,8 @@ NOTARY_PROFILE=TouchBarLyricsNotary ./notarize.sh
 ## Fitur utama
 
 - Mode tampilan **Touch Bar / Notch / Both / Hidden**; default tetap Touch Bar. Notch top-center transparent `NSPanel`, semua Spaces, no focus stealing, synthetic notch di Mac tanpa physical notch.
+- **Hover notch otomatis melebar:** lirik + artwork + judul + artist + album + kontrol sebelumnya/play-pause/berikutnya; mouse keluar mengecilkan kembali. Native macOS controls, keyboard-accessible, `prefers-reduced-motion` dihormati.
+- `web/notch.html` + `web/notch.css` + `web/notch.js`: browser-rendered notch UI untuk Windows Chrome/Brave/Edge/Firefox dan browser lain. Browser-only UI tidak otomatis menjadi OS always-on-top atau membaca system-wide Now Playing; butuh extension/native host. Lihat `web/README.md`.
 - Karaoke per huruf/per kata, main + backing vocal.
 - LRC/YRC + enhanced LRC + estimasi.
 - Romanisasi Jepang, Korea, China, dan script non-Latin lainnya.

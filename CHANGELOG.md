@@ -7,6 +7,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versi
 ### Added
 - `README.md`, `CHANGELOG.md`, `.gitignore`.
 - **Notch output:** `NotchLyricsWindowController`, top-center transparent `NSPanel`, `DisplayMode` Touch Bar / Notch / Both / Hidden, physical-notch-aware top inset, secondary display support, same lyrics/theme/artwork pipeline, reduced-motion handling.
+- **Hover-expanded notch:** cursor enter auto-expands; shows artwork, title, artist, album, lyrics, backing vocal, progress, native previous/play-pause/next controls; no focus stealing; keyboard accessible; collapses on exit.
+- **Browser notch UI:** `web/notch.html`, `web/notch.css`, `web/notch.js`, no build step, Windows Chrome/Brave/Edge/Firefox-compatible; `NotchLyrics.update`, `postMessage`, command callbacks; OS always-on-top/system-wide Now Playing still needs extension/native host.
 - `tests/run.sh` + `tests/NotchTests.swift` standalone tests for display-mode routing and top-center geometry.
 - `build.sh` reproducible local build, source `Info.plist`, `VERSION`, `BUILD_NUMBER`, signing hook.
 - `notarize.sh` untuk Developer ID + notarytool + stapler.

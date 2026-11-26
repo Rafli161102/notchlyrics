@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>NotchLyrics</title>
+  <link rel="stylesheet" href="notch.css">
+</head>
+<body>
+  <main>
+    <section id="notch" class="notch" aria-label="NotchLyrics" tabindex="0">
+      <img id="artwork" class="artwork" alt="" width="32" height="32">
+      <div class="lyrics">
+        <p id="main-lyric" class="main-lyric"></p>
+        <p id="backing-lyric" class="backing-lyric" hidden></p>
+      </div>
+      <div class="metadata" aria-live="polite">
+        <p id="track-title" class="track-title"></p>
+        <p id="artist" class="artist"></p>
+        <p id="album" class="album"></p>
+      </div>
+      <div class="controls" aria-label="Kontrol lagu">
+        <button type="button" data-command="previous" aria-label="Lagu sebelumnya">Prev</button>
+        <button type="button" id="play-pause" data-command="togglePlayPause" aria-label="Putar atau jeda">Play</button>
+        <button type="button" data-command="next" aria-label="Lagu berikutnya">Next</button>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+    </section>
+  </main>
+  <script src="notch.js"></script>
+</body>
+</html>

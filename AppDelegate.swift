@@ -280,9 +280,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     }
 
     private func setupNotch() {
-        let controller = NotchLyricsWindowController { [weak self] in
-            self?.sendPlayPauseCommand()
-        }
+        let controller = NotchLyricsWindowController(
+            onTogglePlayPause: { [weak self] in self?.sendPlayPauseCommand() },
+            onSendCommand: { [weak self] command in self?.sendMediaRemoteCommand(command) }
+        )
         controller.setCharacterAnimationEnabled(characterAnimationEnabled)
         notchWindowController = controller
         applyDisplayMode()
@@ -386,10 +387,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     }
 
     private func sendPlayPauseCommand() {
+        sendMediaRemoteCommand(2)
+    }
+
+    private func sendMediaRemoteCommand(_ command: Int) {
         DispatchQueue.global(qos: .userInitiated).async { [adapterScript, adapterFramework] in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-            proc.arguments = [adapterScript, adapterFramework, "send", "2"]
+            proc.arguments = [adapterScript, adapterFramework, "send", "\(command)"]
             proc.standardOutput = FileHandle.nullDevice
             proc.standardError = FileHandle.nullDevice
             try? proc.run()
@@ -716,7 +721,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
                 backingVocalEnergy: liveBackingEnergy,
                 isPlaying: currentState.playing,
                 isVocalSynced: autoVocalSyncEnabled && vocalSync.isTapActive,
-                songPalette: songPalette
+                songPalette: songPalette,
+                artist: fetcher.cleanArtist(currentState.artist),
+                album: currentState.album,
+                artworkData: currentState.artworkData.isEmpty ? nil : currentState.artworkData
             )
         }
     }
