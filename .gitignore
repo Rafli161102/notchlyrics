@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build outputs
+.build/
+DerivedData/
+.build-*
+*.dSYM
+*.app
+*.ipa
+*.zip
+*.notarize*
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+.swiftpm/
+
+# SwiftPM (not currently used; reserved)
+.swiftpm/
+.build/
+
+# Secrets / local signing
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+*.key
+*.pem
+entitlements.local.*
+.local/
+.env
+.env.*
+!README.md
+
+# Logs
+*.log
+logs/
+
+# Local tooling
+.vscode/
+.idea/
