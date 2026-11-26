@@ -1,4 +1,4 @@
-# NotchLyrics (`TouchBarLyrics`)
+# NotchLyrics
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: macOS 14.2+ | Windows 10/11](https://img.shields.io/badge/Platform-macOS%2014.2%2B%20%7C%20Windows%2010%2F11-black)
