@@ -55,6 +55,10 @@ final class TouchBarLyricsView: NSView {
         mainLyricLabel.attributedStringValue
     }
 
+    /// Optional accessibility override used by deterministic rendering tests.
+    /// Production behavior falls back to the user's macOS Reduce Motion setting.
+    var accessibilityReduceMotionOverrideForTesting: Bool?
+
     var characterAnimationEnabled: Bool = true {
         didSet {
             lastRenderedQuantizedStep = -1
@@ -491,7 +495,8 @@ final class TouchBarLyricsView: NSView {
         let backingChanged = (formattedBacking != currentBackingSignature)
 
         let now = Date()
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduceMotion = accessibilityReduceMotionOverrideForTesting
+            ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if mainChanged {
             let isRapidBurst = now.timeIntervalSince(lineAppearDate) < 0.70 || mainText.count >= 44
             let animDur = (isRapidBurst ? 0.11 : 0.19) / Double(speed)
