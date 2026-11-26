@@ -41,14 +41,60 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Windows desktop dependencies & package installer
+      - name: Install Windows desktop dependencies & package x64/ARM64 targets
         run: |
           cd windows
           npm install
-          npm test
-          npx electron-builder --win --x64
-      - name: Upload Windows installer artifact
+          npm run dist:win
+      - name: Verify packaged targets, app.asar runtime files & .exe outputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            function findAsars(dir, out = []) {
+              if (!fs.existsSync(dir)) return out;
+              for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, ent.name);
+                if (ent.isDirectory()) findAsars(full, out);
+                else if (ent.isFile() && ent.name === 'app.asar') out.push(full);
+              }
+              return out;
+            }
+            const asars = findAsars('windows/dist');
+            const hasX64 = asars.some((p) => p.includes('win-unpacked'));
+            const hasArm64 = asars.some((p) => p.includes('arm64'));
+            if (!hasX64 || !hasArm64) {
+              throw new Error('Expected both x64 and ARM64 app.asar, found: ' + asars.join(', '));
+            }
+            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'i18n.js', 'win_smtc.ps1', 'renderer'];
+            for (const asarPath of asars) {
+              const buf = fs.readFileSync(asarPath);
+              const jsonLen = buf.readUInt32LE(12);
+              const header = JSON.parse(buf.subarray(16, 16 + jsonLen).toString('utf8'));
+              const files = header.files || {};
+              for (const item of req) {
+                if (!Object.prototype.hasOwnProperty.call(files, item)) {
+                  throw new Error('Missing ' + item + ' in ' + asarPath);
+                }
+              }
+              if (Object.prototype.hasOwnProperty.call(files, 'tests')) {
+                throw new Error('Unexpected dev tests dir inside ' + asarPath);
+              }
+            }
+            console.log('Verified x64 & ARM64 app.asar (' + asars.join(', ') + ') entries: ' + req.join(', '));
+          "
+          $exes = Get-ChildItem -Path 'windows/dist' -Filter '*.exe'
+          $hasSetup = $exes | Where-Object { $_.Name -like '*Setup*.exe' }
+          $hasX64Portable = $exes | Where-Object { $_.Name -like '*-x64-portable.exe' }
+          $hasArm64Portable = $exes | Where-Object { $_.Name -like '*-arm64-portable.exe' }
+          if (-not $hasSetup -or -not $hasX64Portable -or -not $hasArm64Portable) {
+            throw "Missing expected Setup/x64-portable/arm64-portable .exe artifacts. Found: $($exes.Name -join ', ')"
+          }
+          $exes | Select-Object Name, Length
+      - name: Upload Windows installer & portable artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: NotchLyrics-Windows-x64
+          name: NotchLyrics-Windows-x64-arm64
           path: windows/dist/*.exe
