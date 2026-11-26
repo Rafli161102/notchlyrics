@@ -1092,6 +1092,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
 
         mainMenu.addItem(NSMenuItem.separator())
 
+        let appVer = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "2.3.0"
+        let aboutItem = NSMenuItem(title: L10n.tr("menu.about", appVer), action: #selector(showAboutDialog), keyEquivalent: "")
+        aboutItem.target = self
+        mainMenu.addItem(aboutItem)
+
         let quitItem = NSMenuItem(title: L10n.tr("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         mainMenu.addItem(quitItem)
@@ -1172,6 +1177,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         guard let raw = sender.representedObject as? String,
               let lang = AppLanguage(rawValue: raw) else { return }
         L10n.currentLanguage = lang
+    }
+
+    @objc private func showAboutDialog() {
+        let ver = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "2.3.0"
+        let build = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "3"
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = L10n.tr("about.title", ver, build)
+        alert.informativeText = L10n.tr("about.body")
+        alert.addButton(withTitle: L10n.tr("about.close"))
+        alert.addButton(withTitle: L10n.tr("about.openReleases"))
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertSecondButtonReturn,
+           let url = URL(string: "https://github.com/Rafli161102/notchlyrics/releases") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func nudgeLyricsStep(_ sender: NSMenuItem) {

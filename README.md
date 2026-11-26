@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/notchlyrics-banner.svg" alt="NotchLyrics Logo" width="560">
+</p>
+
 # NotchLyrics
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -56,6 +60,7 @@ Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure O
 ├── Info.plist                       # App metadata & privacy usage descriptions
 ├── .github/workflows/               # Cross-platform CI build & tagged release automation
 ├── tests/                           # Standalone macOS Swift test suites
+├── assets/                          # Vector SVG app icon & GitHub banner assets
 ├── windows/                         # Windows 10/11 Electron app, WinRT SMTC & MV3 extension
 └── web/                             # Reusable standalone browser notch UI
 ```

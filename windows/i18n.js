@@ -74,6 +74,38 @@ const TRANSLATIONS = {
     'zh-Hans': '设置语言',
     es: 'Idioma de Ajustes'
   },
+  aboutMenu: {
+    en: 'About NotchLyrics...',
+    id: 'Tentang NotchLyrics...',
+    ja: 'NotchLyrics について...',
+    ko: 'NotchLyrics 정보...',
+    'zh-Hans': '关于 NotchLyrics...',
+    es: 'Acerca de NotchLyrics...'
+  },
+  aboutDetail: {
+    en: 'Real-time synchronized karaoke lyrics for Windows 10/11 (Golden Ratio OLED Notch + WinRT SMTC).\n\nSources: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLicense: MIT License\nRepository: github.com/Rafli161102/notchlyrics',
+    id: 'Lirik karaoke tersinkronisasi real-time untuk Windows 10/11 (Golden Ratio OLED Notch + WinRT SMTC).\n\nSumber: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLisensi: MIT License\nRepositori: github.com/Rafli161102/notchlyrics',
+    ja: 'Windows 10/11 向けのリアルタイム同期カラオケ歌詞オーバーレイ (OLED ノッチ + WinRT SMTC)。\n\n歌詞ソース: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nライセンス: MIT License\nリポジトリ: github.com/Rafli161102/notchlyrics',
+    ko: 'Windows 10/11용 실시간 동기화 가라오케 가사 오버레이 (OLED 노치 + WinRT SMTC).\n\n가사 출처: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\n라이선스: MIT License\n저장소: github.com/Rafli161102/notchlyrics',
+    'zh-Hans': '面向 Windows 10/11 的实时同步卡拉OK歌词悬浮窗 (OLED 刘海屏 + WinRT SMTC)。\n\n歌词来源: LRCLIB、网易云 (YRC/LRC)、酷狗、酷我、Deezer、iTunes\n开源协议: MIT License\n代码仓库: github.com/Rafli161102/notchlyrics',
+    es: 'Letras de karaoke sincronizadas en tiempo real para Windows 10/11 (Notch OLED + WinRT SMTC).\n\nFuentes: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLicencia: MIT License\nRepositorio: github.com/Rafli161102/notchlyrics'
+  },
+  aboutOpenReleases: {
+    en: 'GitHub Releases',
+    id: 'Buka Rilis GitHub',
+    ja: 'GitHub リリースを開く',
+    ko: 'GitHub 릴리스 열기',
+    'zh-Hans': '打开 GitHub 发布页',
+    es: 'Abrir GitHub Releases'
+  },
+  aboutClose: {
+    en: 'Close',
+    id: 'Tutup',
+    ja: '閉じる',
+    ko: '닫기',
+    'zh-Hans': '关闭',
+    es: 'Cerrar'
+  },
   quitApp: {
     en: 'Quit NotchLyrics',
     id: 'Keluar NotchLyrics',

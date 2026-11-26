@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -291,11 +291,27 @@ function buildTray() {
         submenu: langItems
       },
       { type: 'separator' },
+      { label: `${t(appLanguage, 'aboutMenu')} (v${app.getVersion()})`, click: () => showAboutDialog() },
       { label: t(appLanguage, 'quitApp'), click: () => app.quit() }
     ]);
     tray.setContextMenu(menu);
   };
   rebuildMenu();
+}
+
+async function showAboutDialog() {
+  const res = await dialog.showMessageBox({
+    type: 'info',
+    title: 'NotchLyrics',
+    message: `NotchLyrics for Windows v${app.getVersion()}`,
+    detail: t(appLanguage, 'aboutDetail'),
+    buttons: [t(appLanguage, 'aboutClose'), t(appLanguage, 'aboutOpenReleases')],
+    defaultId: 0,
+    cancelId: 0
+  });
+  if (res.response === 1) {
+    shell.openExternal('https://github.com/Rafli161102/notchlyrics/releases');
+  }
 }
 
 ipcMain.on('notch-command', (_event, cmd) => sendMediaCommand(cmd));

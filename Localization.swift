@@ -423,6 +423,34 @@ enum L10n {
             .english: "Quit TouchBarLyrics", .indonesian: "Keluar TouchBarLyrics", .japanese: "TouchBarLyrics を終了",
             .korean: "TouchBarLyrics 종료", .chineseSimplified: "退出 TouchBarLyrics", .spanish: "Salir de TouchBarLyrics"
         ],
+        "menu.about": [
+            .english: "About NotchLyrics v%@...", .indonesian: "Tentang NotchLyrics v%@...", .japanese: "NotchLyrics v%@ について...",
+            .korean: "NotchLyrics v%@ 정보...", .chineseSimplified: "关于 NotchLyrics v%@...", .spanish: "Acerca de NotchLyrics v%@..."
+        ],
+        "about.title": [
+            .english: "NotchLyrics (TouchBarLyrics) v%@ (%@)",
+            .indonesian: "NotchLyrics (TouchBarLyrics) v%@ (%@)",
+            .japanese: "NotchLyrics (TouchBarLyrics) v%@ (%@)",
+            .korean: "NotchLyrics (TouchBarLyrics) v%@ (%@)",
+            .chineseSimplified: "NotchLyrics (TouchBarLyrics) v%@ (%@)",
+            .spanish: "NotchLyrics (TouchBarLyrics) v%@ (%@)"
+        ],
+        "about.body": [
+            .english: "Real-time synchronized karaoke lyrics for macOS Touch Bar & Notch.\n\nSources: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes, Lyrics.ovh\nEngine: CoreAudio Vocal Auto-Sync, BPM & Multi-Language Settings\nLicense: MIT License\nRepository: github.com/Rafli161102/notchlyrics",
+            .indonesian: "Lirik karaoke tersinkronisasi real-time untuk macOS Touch Bar & Notch.\n\nSumber: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes, Lyrics.ovh\nMesin: Auto-Sync Audio Vokal CoreAudio, BPM & Pengaturan 6 Bahasa\nLisensi: MIT License\nRepositori: github.com/Rafli161102/notchlyrics",
+            .japanese: "macOS Touch Bar & ノッチ向けのリアルタイム同期カラオケ歌詞。\n\n歌詞ソース: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\n機能: CoreAudio 音声自動同期・BPM・6言語設定 UI\nライセンス: MIT License\nリポジトリ: github.com/Rafli161102/notchlyrics",
+            .korean: "macOS Touch Bar 및 노치용 실시간 동기화 가라오케 가사.\n\n가사 출처: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\n기능: CoreAudio 보컬 자동 동기화, BPM, 6개 언어 설정\n라이선스: MIT License\n저장소: github.com/Rafli161102/notchlyrics",
+            .chineseSimplified: "面向 macOS Touch Bar 与刘海屏的实时同步卡拉OK歌词。\n\n歌词来源: LRCLIB、网易云 (YRC/LRC)、酷狗、酷我、Deezer、iTunes\n引擎: CoreAudio 人声自动同步、BPM 与 6 国语言界面\n开源协议: MIT License\n代码仓库: github.com/Rafli161102/notchlyrics",
+            .spanish: "Letras de karaoke sincronizadas en tiempo real para macOS Touch Bar y Notch.\n\nFuentes: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nMotor: Auto-Sync vocal CoreAudio, BPM y 6 idiomas\nLicencia: MIT License\nRepositorio: github.com/Rafli161102/notchlyrics"
+        ],
+        "about.openReleases": [
+            .english: "GitHub Releases", .indonesian: "Buka Rilis GitHub", .japanese: "GitHub リリースを開く",
+            .korean: "GitHub 릴리스 열기", .chineseSimplified: "打开 GitHub 发布页", .spanish: "Abrir GitHub Releases"
+        ],
+        "about.close": [
+            .english: "Close", .indonesian: "Tutup", .japanese: "閉じる",
+            .korean: "닫기", .chineseSimplified: "关闭", .spanish: "Cerrar"
+        ],
 
         // Vocal Auto-Sync Engine Statuses
         "sync.standby": [
