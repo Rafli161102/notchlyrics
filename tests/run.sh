@@ -14,6 +14,7 @@ xcrun swiftc \
   -framework Foundation \
   -o "$BUILD_DIR/notch-tests" \
   "$ROOT/tests/NotchTests.swift" \
+  "$ROOT/Localization.swift" \
   "$ROOT/ThemeModels.swift" \
   "$ROOT/DisplayMode.swift" \
   "$ROOT/NotchGeometry.swift"
@@ -30,6 +31,7 @@ xcrun swiftc \
   -framework AudioToolbox \
   -o "$BUILD_DIR/core-tests" \
   "$ROOT/tests/CoreEngineTests.swift" \
+  "$ROOT/Localization.swift" \
   "$ROOT/ThemeModels.swift" \
   "$ROOT/TextRomanizerAndArtwork.swift" \
   "$ROOT/LyricsParserAndFetcher.swift" \

@@ -403,6 +403,65 @@ enum CoreEngineTests {
         check((pauseParsed.first?.endTime ?? 99) <= 48.1, "empty LRC timestamp preserves instrumental/breath end boundary")
         check((synthesized.first?.words.last.map { $0.time + $0.duration } ?? 99) <= 48.0, "karaoke words finish before breath gap instead of dragging across 8s pause")
 
+        // v2.3: Rapid non-parenthesized chorus lines (0.28s apart) stay separate lead lines, while unison backing locks to 0.0s lead start
+        let rapidChorus = LyricsParserAndFetcher.parseLRC("""
+        [00:10.00]Wait for me in the rain
+        [00:10.28]Run away
+        [00:11.20](hold on) Hold on now
+        """)
+        check(rapidChorus.count == 3, "rapid 0.28s chorus lines stay separate main lines instead of collapsing into backing")
+        let synthRapid = LyricsParserAndFetcher.synthesizeWordTimings(for: rapidChorus)
+        check(abs((synthRapid.last?.backingTime ?? -1) - 11.20) < 0.05, "unison backing vocal starts right on lead onset (11.20s)")
+
+        // v2.3: Track-wide cadence calibration prevents short phrase before long break from dragging
+        let calibratedSong = LyricsParserAndFetcher.synthesizeWordTimings(for: LyricsParserAndFetcher.parseLRC("""
+        [00:01.00]Fast beat one two three four
+        [00:02.10]Fast beat five six seven eight
+        [00:03.20]Fast beat nine ten eleven
+        [00:04.30]Short line
+        [00:11.30]Next chorus drops here now
+        """))
+        let shortPhraseEnd = calibratedSong[3].words.last.map { $0.time + $0.duration } ?? 99
+        check(shortPhraseEnd < 7.5, "track-calibrated cadence keeps short phrase concise before 7s instrumental pause (end=\(shortPhraseEnd))")
+
+        // v2.3: Theme Codable defaults + new VocalSyncMode & backingOffsetSeconds roundtrip
+        var customTheme = TouchBarTheme.builtInThemes[0]
+        customTheme.vocalSyncMode = .strictCrowded
+        customTheme.backingOffsetSeconds = -0.35
+        if let encoded = try? JSONEncoder().encode(customTheme),
+           let decoded = try? JSONDecoder().decode(TouchBarTheme.self, from: encoded) {
+            check(decoded.vocalSyncMode == .strictCrowded && abs(decoded.backingOffsetSeconds - (-0.35)) < 0.001, "TouchBarTheme persists vocalSyncMode and backingOffsetSeconds")
+        } else {
+            check(false, "TouchBarTheme encodes and decodes cleanly")
+        }
+
+        let syncEngine = VocalAutoSyncEngine()
+        syncEngine.syncMode = .strictCrowded
+        check(syncEngine.syncMode == .strictCrowded, "VocalAutoSyncEngine exposes syncMode configuration")
+
+        // v2.3: Multi-language i18n parity & English default check across all AppLanguage cases
+        let savedLangRaw = UserDefaults.standard.string(forKey: "appLanguage")
+        UserDefaults.standard.removeObject(forKey: "appLanguage")
+        check(L10n.currentLanguage == .english, "default settings language is English")
+        var missingOrEmpty = 0
+        for (key, row) in L10n.translations {
+            for lang in AppLanguage.allCases {
+                let val = row[lang] ?? ""
+                if val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    missingOrEmpty += 1
+                    print("Missing translation: \(key) [\(lang.rawValue)]")
+                }
+            }
+        }
+        check(missingOrEmpty == 0, "all \(L10n.translations.count) UI keys are translated across all \(AppLanguage.allCases.count) languages")
+        L10n.currentLanguage = .japanese
+        check(VocalSyncMode.manual.displayName == "手動 (固定オフセット)", "enum displayName switches dynamically with selected language")
+        if let prev = savedLangRaw {
+            UserDefaults.standard.set(prev, forKey: "appLanguage")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "appLanguage")
+        }
+
         if failures > 0 {
             print("\(failures) failing core test(s)")
             exit(1)

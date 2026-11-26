@@ -56,7 +56,9 @@ final class VocalAutoSyncEngine {
     private(set) var detectedBPM: Double = 0
 
     private(set) var isTapActive: Bool = false
-    private(set) var statusDescription: String = "Standby"
+    private(set) var statusDescription: String = L10n.tr("sync.standby")
+    private var isWaitingForLock: Bool = true
+    var syncMode: VocalSyncMode = .balanced
     var onAutoOffsetUpdated: ((TimeInterval, TimeInterval, String) -> Void)?
 
     func startIfNeeded() {
@@ -73,7 +75,7 @@ final class VocalAutoSyncEngine {
         var newTapID: AudioObjectID = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(desc, &newTapID)
         guard tapStatus == noErr, newTapID != kAudioObjectUnknown else {
-            statusDescription = "Butuh izin System Audio (fallback timestamp)"
+            statusDescription = L10n.tr("sync.needPermission")
             NSLog("[TouchBarLyrics] process tap rejected status=%d", tapStatus)
             return
         }
@@ -97,7 +99,7 @@ final class VocalAutoSyncEngine {
         guard aggStatus == noErr, newAggID != kAudioObjectUnknown else {
             AudioHardwareDestroyProcessTap(tapID)
             tapID = kAudioObjectUnknown
-            statusDescription = "Gagal membuat audio tap"
+            statusDescription = L10n.tr("sync.tapFailed")
             NSLog("[TouchBarLyrics] aggregate device failed status=%d", aggStatus)
             return
         }
@@ -112,7 +114,7 @@ final class VocalAutoSyncEngine {
         guard ioStatus == noErr, let validProcID = procID else {
             NSLog("[TouchBarLyrics] IO proc failed status=%d", ioStatus)
             stop()
-            statusDescription = "Gagal memulai audio monitor"
+            statusDescription = L10n.tr("sync.monitorFailed")
             return
         }
         ioProcID = validProcID
@@ -121,12 +123,12 @@ final class VocalAutoSyncEngine {
         guard startStatus == noErr else {
             NSLog("[TouchBarLyrics] audio device start failed status=%d", startStatus)
             stop()
-            statusDescription = "Audio tap ditolak (fallback timestamp)"
+            statusDescription = L10n.tr("sync.tapDenied")
             return
         }
 
         isTapActive = true
-        statusDescription = "Aktif (mendengar vokal...)"
+        statusDescription = L10n.tr("sync.listening")
         NSLog("[TouchBarLyrics] audio tap active sampleRate=%.0f channels=%d", self.sampleRate, self.numChannels)
     }
 
@@ -172,8 +174,9 @@ final class VocalAutoSyncEngine {
         bpmHistory.removeAll()
         detectedBPM = 0
         os_unfair_lock_unlock(&lock)
+        isWaitingForLock = true
         if isTapActive {
-            statusDescription = "Menganalisa vokal & BPM..."
+            statusDescription = L10n.tr("sync.analyzing")
         }
     }
 
@@ -226,7 +229,8 @@ final class VocalAutoSyncEngine {
         candidateHistory.removeAll()
         backingCandidateHistory.removeAll()
         os_unfair_lock_unlock(&lock)
-        statusDescription = "Auto-Sync Vokal: Direset (0.00s)"
+        isWaitingForLock = true
+        statusDescription = L10n.tr("sync.reset")
         onAutoOffsetUpdated?(0, 0, statusDescription)
     }
 
@@ -282,7 +286,8 @@ final class VocalAutoSyncEngine {
             samplesBuffer.removeAll(keepingCapacity: true)
             candidateHistory.removeAll()
             backingCandidateHistory.removeAll()
-            statusDescription = "Menyelaraskan ulang posisi..."
+            isWaitingForLock = true
+            statusDescription = L10n.tr("sync.realigning")
         }
         lastSampleElapsed = mediaElapsed
 
@@ -312,10 +317,16 @@ final class VocalAutoSyncEngine {
 
         estimateRealtimeBPM(nowSec: CFAbsoluteTimeGetCurrent())
 
+        if syncMode == .manual {
+            statusDescription = L10n.tr("sync.manualFixed")
+            return
+        }
+
         // Require ~1.8 seconds of contiguous audio (18 samples at 10 Hz) for fast sub-second lock
         guard snapshot.count >= 18 else {
             let pct = Int((Double(snapshot.count) / 18.0) * 100.0)
-            statusDescription = "Kalibrasi vokal (\(pct)%)..."
+            isWaitingForLock = true
+            statusDescription = L10n.tr("sync.calibrating", pct)
             return
         }
 
@@ -328,7 +339,7 @@ final class VocalAutoSyncEngine {
         os_unfair_lock_unlock(&lock)
         // Volume-independent dynamic floor (prevents guitar/drum intros from falsely triggering)
         guard p85 > 1e-6, p85 > p20 * 1.45 else {
-            statusDescription = "Auto-Sync: Menunggu vokal jelas..."
+            statusDescription = L10n.tr("sync.waitingVocal")
             return
         }
 
@@ -337,7 +348,7 @@ final class VocalAutoSyncEngine {
         // Do not lock a random large offset during pre-song instrumental intros before lyrics appear
         let hasActiveLyricRegion = lyrics.contains { $0.time >= (minWindowT - 6.0) && $0.time <= (maxWindowT + 6.0) }
         guard hasActiveLyricRegion else {
-            statusDescription = "Auto-Sync: Menunggu masuk lirik..."
+            statusDescription = L10n.tr("sync.waitingLyrics")
             return
         }
 
@@ -468,9 +479,34 @@ final class VocalAutoSyncEngine {
 
         let quantized = (bestDelta * 10.0).rounded() / 10.0
         let baseline = max(zeroScore, currentOffsetScore)
+        let clarityRatio = Double((p85 - p20) / max(1e-5, p85))
+        let isDenseChorus = clarityRatio < 0.36 || risingOnsets.count > 12
+
+        // Guard against crowded chorus / busy background instruments pulling offsets off-beat
+        let minImprovement: Double
+        let maxStepCap: Double
+        let requiredConsensus: Int
+        switch syncMode {
+        case .strictCrowded:
+            minImprovement = 0.85
+            maxStepCap = 0.25
+            requiredConsensus = 3
+        case .balanced:
+            minImprovement = isDenseChorus ? 0.78 : 0.45
+            maxStepCap = isDenseChorus ? 0.30 : 0.70
+            requiredConsensus = isDenseChorus ? 3 : 2
+        case .fastLock:
+            minImprovement = 0.30
+            maxStepCap = 1.20
+            requiredConsensus = 2
+        case .manual:
+            minImprovement = 999.0
+            maxStepCap = 0.0
+            requiredConsensus = 99
+        }
 
         os_unfair_lock_lock(&lock)
-        if bestScore - baseline >= 0.45 {
+        if bestScore - baseline >= minImprovement {
             candidateHistory.append(quantized)
         } else {
             candidateHistory.append(lastAutoOffset)
@@ -479,14 +515,14 @@ final class VocalAutoSyncEngine {
             candidateHistory.removeFirst(candidateHistory.count - 4)
         }
 
-        // Require consensus (at least 2 recent evaluations within ±0.45s) to eliminate flip-flopping
+        // Require consensus to eliminate flip-flopping during noisy choruses
         let recent = candidateHistory
         os_unfair_lock_unlock(&lock)
 
         let targetDelta: Double
-        if recent.count >= 2 {
-            let close = recent.filter { abs($0 - quantized) <= 0.45 }
-            if close.count >= 2 && bestScore - zeroScore >= 0.50 {
+        if recent.count >= requiredConsensus {
+            let close = recent.filter { abs($0 - quantized) <= 0.40 }
+            if close.count >= requiredConsensus && bestScore - zeroScore >= minImprovement {
                 targetDelta = close.reduce(0, +) / Double(close.count)
             } else {
                 targetDelta = lastAutoOffset
@@ -499,10 +535,10 @@ final class VocalAutoSyncEngine {
         var steppedDelta: Double
         if abs(diff) <= 0.04 {
             steppedDelta = lastAutoOffset
-        } else if abs(diff) > 2.0 && recent.count >= 2 {
+        } else if abs(diff) > 2.0 && recent.count >= requiredConsensus && !isDenseChorus && syncMode != .strictCrowded {
             steppedDelta = (targetDelta * 25.0).rounded() / 25.0
         } else {
-            let clampStep = max(-0.8, min(0.8, diff))
+            let clampStep = max(-maxStepCap, min(maxStepCap, diff))
             steppedDelta = ((lastAutoOffset + clampStep) * 25.0).rounded() / 25.0
         }
 
@@ -547,7 +583,8 @@ final class VocalAutoSyncEngine {
                 && $0.time <= (maxT + 4.0)
         }
 
-        if bgP85 > 1e-6, bgP85 > bgP20 * 1.45, activeBackingLines.count >= 2 {
+        let bgClarity = Double((bgP85 - bgP20) / max(1e-5, bgP85))
+        if bgP85 > 1e-6, bgP85 > bgP20 * 1.45, activeBackingLines.count >= 2, (bgClarity >= 0.30 || !isDenseChorus) {
             let bgRange = max(1e-6, bgP85 - bgP20)
             let normBG: [Double] = sampled.map {
                 min(1.0, max(0.0, Double(($0.backingEnergy - bgP20) / bgRange)))
@@ -614,13 +651,14 @@ final class VocalAutoSyncEngine {
 
         let leadChanged = abs(steppedDelta - lastAutoOffset) >= 0.05
         let bgChanged = abs(steppedBackingDelta - lastBackingOffset) >= 0.10
-        if leadChanged || bgChanged || statusDescription.hasPrefix("Kalibrasi") || statusDescription.hasPrefix("Menganalisa") || statusDescription.hasPrefix("Menyelaraskan") {
+        if leadChanged || bgChanged || isWaitingForLock {
+            isWaitingForLock = false
             lastAutoOffset = steppedDelta
             lastBackingOffset = steppedBackingDelta
             let bpmNow = Int(currentBPM().rounded())
             let bpmTag = bpmNow >= 55 ? "BPM \(bpmNow) | " : ""
             let msg = (abs(steppedDelta) < 0.05 && abs(steppedBackingDelta) < 0.10)
-                ? "\(bpmTag)Auto-Sync: 0.00s (Clarity \(clarityPct)%)"
+                ? L10n.tr("sync.balancedZero", bpmTag, clarityPct)
                 : String(format: "%@Sync: Lead %+.2fs | BG %+.2fs (%d%%)", bpmTag, steppedDelta, steppedBackingDelta, clarityPct)
             statusDescription = msg
             onAutoOffsetUpdated?(steppedDelta, steppedBackingDelta, msg)

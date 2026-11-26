@@ -2,8 +2,10 @@ import Cocoa
 
 final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private let themePopup = NSPopUpButton()
+    private let languagePopup = NSPopUpButton()
     private let nameField = NSTextField()
-    private let deleteButton = NSButton(title: "Hapus", target: nil, action: nil)
+    private let deleteButton = NSButton(title: L10n.tr("studio.deleteBtn"), target: nil, action: nil)
+    private weak var mainTabView: NSTabView?
 
     // Layout & Typography Controls
     private let layoutModePopup = NSPopUpButton()
@@ -21,7 +23,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private let radiusPopup = NSPopUpButton()
     private let tagPopup = NSPopUpButton()
     private let notchStylePopup = NSPopUpButton()
-    private let showBorderCheck = NSButton(checkboxWithTitle: "Tampilkan garis tepi (border)", target: nil, action: nil)
+    private let showBorderCheck = NSButton(checkboxWithTitle: L10n.tr("studio.label.showBorder"), target: nil, action: nil)
 
     // Color Pickers & Hex Inputs
     private let bgWell = NSColorWell()
@@ -33,13 +35,18 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private let trackWell = NSColorWell()
     private let colorSyncPopup = NSPopUpButton()
 
+    var onRecalibrateSync: (() -> Void)?
+
     // Animation & Karaoke Tempo Controls
     private let lineTransPopup = NSPopUpButton()
     private let wordAnimPopup = NSPopUpButton()
-    private let wordSpeedSlider = NSSlider(value: 1.0, minValue: 0.50, maxValue: 2.00, target: nil, action: nil)
+    private let vocalSyncModePopup = NSPopUpButton()
+    private let wordSpeedSlider = NSSlider(value: 1.0, minValue: 0.40, maxValue: 2.20, target: nil, action: nil)
     private let wordSpeedValueLabel = NSTextField(labelWithString: "1.00x")
-    private let karaokeOffsetSlider = NSSlider(value: 0.0, minValue: -1.50, maxValue: 1.50, target: nil, action: nil)
+    private let karaokeOffsetSlider = NSSlider(value: 0.0, minValue: -2.50, maxValue: 2.50, target: nil, action: nil)
     private let karaokeOffsetValueLabel = NSTextField(labelWithString: "0.00s")
+    private let backingOffsetSlider = NSSlider(value: 0.0, minValue: -1.50, maxValue: 1.50, target: nil, action: nil)
+    private let backingOffsetValueLabel = NSTextField(labelWithString: "0.00s")
     private let animSpeedSlider = NSSlider(value: 1.0, minValue: 0.50, maxValue: 2.00, target: nil, action: nil)
     private let animSpeedValueLabel = NSTextField(labelWithString: "1.00x")
 
@@ -57,18 +64,28 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 610),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        win.title = "Studio Tema, Tata Letak & Animasi"
+        win.title = L10n.tr("studio.windowTitle")
         win.center()
         win.isReleasedWhenClosed = false
         super.init(window: win)
         win.delegate = self
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onLanguageDidChange),
+            name: L10n.didChangeNotification,
+            object: nil
+        )
         setupUI()
         reloadFromStore()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     required init?(coder: NSCoder) {
@@ -130,12 +147,16 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
 
     private func setupUI() {
         guard let content = window?.contentView else { return }
+        content.subviews.forEach { $0.removeFromSuperview() }
+        window?.title = L10n.tr("studio.windowTitle")
+        deleteButton.title = L10n.tr("studio.deleteBtn")
+        showBorderCheck.title = L10n.tr("studio.label.showBorder")
 
         let root = NSStackView()
         root.orientation = .vertical
         root.alignment = .leading
-        root.spacing = 12
-        root.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
+        root.spacing = 10
+        root.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
         root.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(root)
 
@@ -151,25 +172,42 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(previewView)
         NSLayoutConstraint.activate([
-            previewView.widthAnchor.constraint(equalToConstant: 504),
+            previewView.widthAnchor.constraint(equalToConstant: 524),
             previewView.heightAnchor.constraint(equalToConstant: 32)
         ])
         stepPreview()
 
-        // 2. Preset & Name Bar
+        // 2. Language Bar + Preset & Name Bar
+        languagePopup.removeAllItems()
+        for lang in AppLanguage.allCases {
+            languagePopup.addItem(withTitle: lang.displayName)
+        }
+        if let lIdx = AppLanguage.allCases.firstIndex(of: L10n.currentLanguage) {
+            languagePopup.selectItem(at: lIdx)
+        }
+        languagePopup.target = self
+        languagePopup.action = #selector(onSelectLanguage)
+
+        let langRow = NSStackView()
+        langRow.orientation = .horizontal
+        langRow.spacing = 8
+        langRow.addArrangedSubview(NSTextField(labelWithString: L10n.tr("studio.languageLabel")))
+        langRow.addArrangedSubview(languagePopup)
+        root.addArrangedSubview(langRow)
+
         let topBar = NSStackView()
         topBar.orientation = .horizontal
         topBar.spacing = 8
         themePopup.target = self
         themePopup.action = #selector(onSelectTheme)
-        nameField.placeholderString = "Nama tema kustom"
+        nameField.placeholderString = L10n.tr("studio.themeNamePlaceholder")
         nameField.target = self
         nameField.action = #selector(onFieldEdited)
-        let dupBtn = NSButton(title: "Buat Baru / Duplikat", target: self, action: #selector(onDuplicateTheme))
+        let dupBtn = NSButton(title: L10n.tr("studio.duplicateBtn"), target: self, action: #selector(onDuplicateTheme))
         deleteButton.target = self
         deleteButton.action = #selector(onDeleteTheme)
 
-        topBar.addArrangedSubview(NSTextField(labelWithString: "Tema:"))
+        topBar.addArrangedSubview(NSTextField(labelWithString: L10n.tr("studio.themeLabel")))
         topBar.addArrangedSubview(themePopup)
         topBar.addArrangedSubview(nameField)
         nameField.widthAnchor.constraint(equalToConstant: 120).isActive = true
@@ -177,20 +215,21 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         topBar.addArrangedSubview(deleteButton)
         root.addArrangedSubview(topBar)
 
-        // 3. Clean 3-Tab Studio (Tata Letak | Warna | Animasi)
+        // 3. Clean 3-Tab Studio (Layout | Colors | Animation)
         let tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
+        self.mainTabView = tabs
 
         let layoutTab = NSTabViewItem(identifier: "layout")
-        layoutTab.label = "Tata Letak & Teks"
+        layoutTab.label = L10n.tr("studio.tab.layout")
         layoutTab.view = buildLayoutTab()
 
         let colorTab = NSTabViewItem(identifier: "colors")
-        colorTab.label = "Warna & Tema Lagu"
+        colorTab.label = L10n.tr("studio.tab.colors")
         colorTab.view = buildColorTab()
 
         let animTab = NSTabViewItem(identifier: "anim")
-        animTab.label = "Animasi & Motion"
+        animTab.label = L10n.tr("studio.tab.animation")
         animTab.view = buildAnimationTab()
 
         tabs.addTabViewItem(layoutTab)
@@ -198,8 +237,8 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(animTab)
         root.addArrangedSubview(tabs)
         NSLayoutConstraint.activate([
-            tabs.widthAnchor.constraint(equalToConstant: 504),
-            tabs.heightAnchor.constraint(equalToConstant: 325)
+            tabs.widthAnchor.constraint(equalToConstant: 524),
+            tabs.heightAnchor.constraint(equalToConstant: 332)
         ])
 
         contrastLabel.font = NSFont.systemFont(ofSize: 11)
@@ -210,9 +249,9 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         let footer = NSStackView()
         footer.orientation = .horizontal
         footer.spacing = 10
-        let openJsonBtn = NSButton(title: "Buka themes.json...", target: self, action: #selector(onOpenJSON))
-        let resetBuiltInBtn = NSButton(title: "Reset Preset", target: self, action: #selector(onResetPresets))
-        let saveBtn = NSButton(title: "Simpan & Terapkan", target: self, action: #selector(onSave))
+        let openJsonBtn = NSButton(title: L10n.tr("studio.btn.openJson"), target: self, action: #selector(onOpenJSON))
+        let resetBuiltInBtn = NSButton(title: L10n.tr("studio.btn.resetPresets"), target: self, action: #selector(onResetPresets))
+        let saveBtn = NSButton(title: L10n.tr("studio.btn.saveApply"), target: self, action: #selector(onSave))
         saveBtn.keyEquivalent = "\r"
         footer.addArrangedSubview(openJsonBtn)
         footer.addArrangedSubview(resetBuiltInBtn)
@@ -239,8 +278,8 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         configurePopup(fontPopup, titles: ThemeFontStyle.allCases.map { $0.displayName })
         configurePopup(mainSizePopup, titles: ["11.5 pt", "13.0 pt", "14.5 pt"])
         configurePopup(backingSizePopup, titles: ["9.0 pt", "10.0 pt", "11.5 pt"])
-        configurePopup(paddingPopup, titles: ["Ketat (4 pt)", "Standar (8 pt)", "Lega (16 pt)"])
-        configurePopup(radiusPopup, titles: ["Tajam (0)", "Tactile (4)", "Rounded (6)"])
+        configurePopup(paddingPopup, titles: [L10n.tr("studio.pad.tight"), L10n.tr("studio.pad.standard"), L10n.tr("studio.pad.wide")])
+        configurePopup(radiusPopup, titles: [L10n.tr("studio.radius.sharp"), L10n.tr("studio.radius.tactile"), L10n.tr("studio.radius.rounded")])
         configurePopup(tagPopup, titles: ["BG ·", "[BG]", "↳"])
         configurePopup(notchStylePopup, titles: ThemeNotchStyle.allCases.map { $0.displayName })
 
@@ -248,14 +287,14 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         showBorderCheck.action = #selector(onFieldEdited)
 
         let rows: [(String, NSView, String, NSView)] = [
-            ("Pola Tata Letak", layoutModePopup, "Perataan Lirik", textAlignPopup),
-            ("Posisi Judul Lagu", trackPosPopup, "Tombol Play/Pause", controlsPosPopup),
-            ("Posisi Indikator/EQ", eqPosPopup, "Gaya Equalizer", eqStylePopup),
-            ("Posisi Back Vocal", backingPlacementPopup, "Garis Progress", progressPosPopup),
-            ("Jenis Font", fontPopup, "Ukuran Main Vocal", mainSizePopup),
-            ("Ukuran Back Vocal", backingSizePopup, "Tag Back Vocal", tagPopup),
-            ("Jarak Tepi", paddingPopup, "Kelengkungan Sudut", radiusPopup),
-            ("Gaya Notch Atas", notchStylePopup, "Tampilan Border", showBorderCheck)
+            (L10n.tr("studio.label.layoutMode"), layoutModePopup, L10n.tr("studio.label.textAlign"), textAlignPopup),
+            (L10n.tr("studio.label.trackPos"), trackPosPopup, L10n.tr("studio.label.controlsPos"), controlsPosPopup),
+            (L10n.tr("studio.label.eqPos"), eqPosPopup, L10n.tr("studio.label.eqStyle"), eqStylePopup),
+            (L10n.tr("studio.label.backingPlacement"), backingPlacementPopup, L10n.tr("studio.label.progressPos"), progressPosPopup),
+            (L10n.tr("studio.label.font"), fontPopup, L10n.tr("studio.label.mainSize"), mainSizePopup),
+            (L10n.tr("studio.label.backingSize"), backingSizePopup, L10n.tr("studio.label.backingTag"), tagPopup),
+            (L10n.tr("studio.label.padding"), paddingPopup, L10n.tr("studio.label.radius"), radiusPopup),
+            (L10n.tr("studio.label.notchStyle"), notchStylePopup, L10n.tr("studio.label.showBorder"), showBorderCheck)
         ]
 
         let grid = NSGridView(numberOfColumns: 4, rows: rows.count)
@@ -284,10 +323,10 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         grid.columnSpacing = 12
 
         let pairs: [(Int, Int, String, NSControl)] = [
-            (0, 0, "Latar Belakang", bgWell), (0, 2, "Garis Tepi", borderWell),
-            (1, 0, "Vokal Utama", mainWell), (1, 2, "Backing Vocal", backingWell),
-            (2, 0, "Teks Berikutnya", upcomingWell), (2, 2, "Aksen & Sorotan", accentWell),
-            (3, 0, "Judul Lagu", trackWell), (3, 2, "Adaptasi Sampul", colorSyncPopup)
+            (0, 0, L10n.tr("studio.color.bg"), bgWell), (0, 2, L10n.tr("studio.color.border"), borderWell),
+            (1, 0, L10n.tr("studio.color.main"), mainWell), (1, 2, L10n.tr("studio.color.backing"), backingWell),
+            (2, 0, L10n.tr("studio.color.upcoming"), upcomingWell), (2, 2, L10n.tr("studio.color.accent"), accentWell),
+            (3, 0, L10n.tr("studio.color.track"), trackWell), (3, 2, L10n.tr("studio.color.syncMode"), colorSyncPopup)
         ]
 
         for p in pairs {
@@ -301,7 +340,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        let tip = NSTextField(wrappingLabelWithString: "Tip: Kosongkan adaptasi sampul (pilih 'Warna Tema Kustom Saja') bila ingin warna kustom Anda dipakai 100% tetap di setiap lagu.")
+        let tip = NSTextField(wrappingLabelWithString: L10n.tr("studio.color.tip"))
         tip.font = NSFont.systemFont(ofSize: 11)
         tip.textColor = .secondaryLabelColor
 
@@ -316,51 +355,78 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private func buildAnimationTab() -> NSView {
         configurePopup(lineTransPopup, titles: ThemeLineTransition.allCases.map { $0.displayName })
         configurePopup(wordAnimPopup, titles: ThemeWordAnimation.allCases.map { $0.displayName })
+        configurePopup(vocalSyncModePopup, titles: VocalSyncMode.allCases.map { $0.displayName })
 
-        for sl in [wordSpeedSlider, karaokeOffsetSlider, animSpeedSlider] {
+        for sl in [wordSpeedSlider, karaokeOffsetSlider, backingOffsetSlider, animSpeedSlider] {
             sl.isContinuous = true
             sl.target = self
             sl.action = #selector(onSliderChanged(_:))
             sl.widthAnchor.constraint(equalToConstant: 195).isActive = true
         }
-        wordSpeedValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
-        karaokeOffsetValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
-        animSpeedValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        for lbl in [wordSpeedValueLabel, karaokeOffsetValueLabel, backingOffsetValueLabel, animSpeedValueLabel] {
+            lbl.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+            lbl.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        }
 
         func sliderRow(_ slider: NSSlider, _ valLabel: NSTextField) -> NSStackView {
             let s = NSStackView(views: [slider, valLabel])
             s.orientation = .horizontal
             s.spacing = 8
-            valLabel.widthAnchor.constraint(equalToConstant: 54).isActive = true
             return s
         }
 
-        let grid = NSGridView(numberOfColumns: 2, rows: 5)
-        grid.rowSpacing = 12
+        let grid = NSGridView(numberOfColumns: 2, rows: 7)
+        grid.rowSpacing = 10
         grid.columnSpacing = 14
 
         let items: [(String, NSView)] = [
-            ("Transisi Pergantian Baris:", lineTransPopup),
-            ("Efek Gerak Per Kata / Huruf:", wordAnimPopup),
-            ("Kecepatan Gerak Kata:", sliderRow(wordSpeedSlider, wordSpeedValueLabel)),
-            ("Geser Timing Karaoke:", sliderRow(karaokeOffsetSlider, karaokeOffsetValueLabel)),
-            ("Kecepatan Transisi Baris:", sliderRow(animSpeedSlider, animSpeedValueLabel))
+            (L10n.tr("studio.anim.lineTrans"), lineTransPopup),
+            (L10n.tr("studio.anim.wordAnim"), wordAnimPopup),
+            (L10n.tr("studio.anim.syncMode"), vocalSyncModePopup),
+            (L10n.tr("studio.anim.wordSpeed"), sliderRow(wordSpeedSlider, wordSpeedValueLabel)),
+            (L10n.tr("studio.anim.karaokeOffset"), sliderRow(karaokeOffsetSlider, karaokeOffsetValueLabel)),
+            (L10n.tr("studio.anim.backingOffset"), sliderRow(backingOffsetSlider, backingOffsetValueLabel)),
+            (L10n.tr("studio.anim.animSpeed"), sliderRow(animSpeedSlider, animSpeedValueLabel))
         ]
         for (r, item) in items.enumerated() {
             grid.cell(atColumnIndex: 0, rowIndex: r).contentView = NSTextField(labelWithString: item.0)
             grid.cell(atColumnIndex: 1, rowIndex: r).contentView = item.1
         }
 
-        let resetTempoBtn = NSButton(title: "Reset Tempo & Offset (1.00x / 0.00s)", target: self, action: #selector(onResetTempo))
-        let note = NSTextField(wrappingLabelWithString: "Atur Kecepatan Gerak Kata bebas (0.50x-2.00x) agar sapuan perkata pas dengan tempo lagu, dan Geser Timing (-1.50s..+1.50s) bila lirik sedikit terlalu cepat atau lambat.")
+        // Fine millisecond offset nudges & speed presets
+        let stepRow = NSStackView()
+        stepRow.orientation = .horizontal
+        stepRow.spacing = 6
+        stepRow.addArrangedSubview(NSTextField(labelWithString: L10n.tr("studio.anim.quickLabel")))
+        for (title, hundredths) in [("-0.25s", -25), ("-0.05s", -5), ("+0.05s", 5), ("+0.25s", 25)] {
+            let b = NSButton(title: title, target: self, action: #selector(onOffsetStepButton(_:)))
+            b.tag = hundredths
+            b.controlSize = .small
+            stepRow.addArrangedSubview(b)
+        }
+        stepRow.addArrangedSubview(NSTextField(labelWithString: L10n.tr("studio.anim.tempoLabel")))
+        for (title, pct) in [("0.75x", 75), ("1.00x", 100), ("1.25x", 125)] {
+            let b = NSButton(title: title, target: self, action: #selector(onSpeedPresetButton(_:)))
+            b.tag = pct
+            b.controlSize = .small
+            stepRow.addArrangedSubview(b)
+        }
+
+        let resetTempoBtn = NSButton(title: L10n.tr("studio.anim.resetTempo"), target: self, action: #selector(onResetTempo))
+        let recalibrateBtn = NSButton(title: L10n.tr("studio.anim.recalibrateSync"), target: self, action: #selector(onRecalibrateSyncTapped))
+        let actionRow = NSStackView(views: [resetTempoBtn, recalibrateBtn])
+        actionRow.orientation = .horizontal
+        actionRow.spacing = 10
+
+        let note = NSTextField(wrappingLabelWithString: L10n.tr("studio.anim.note"))
         note.font = NSFont.systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
 
-        let box = NSStackView(views: [grid, resetTempoBtn, note])
+        let box = NSStackView(views: [grid, stepRow, actionRow, note])
         box.orientation = .vertical
         box.alignment = .leading
-        box.spacing = 12
-        box.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 10, right: 14)
+        box.spacing = 11
+        box.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 10, right: 14)
         return box
     }
 
@@ -411,10 +477,13 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         radiusPopup.selectItem(at: t.cornerRadius <= 1 ? 0 : (t.cornerRadius <= 4 ? 1 : 2))
         if let tIdx = tagPopup.itemTitles.firstIndex(of: t.backingTag) { tagPopup.selectItem(at: tIdx) }
 
+        if let idx = VocalSyncMode.allCases.firstIndex(of: t.vocalSyncMode) { vocalSyncModePopup.selectItem(at: idx) }
         wordSpeedSlider.doubleValue = Double(t.wordSpeedScale)
         wordSpeedValueLabel.stringValue = String(format: "%.2fx", t.wordSpeedScale)
         karaokeOffsetSlider.doubleValue = t.karaokeOffsetSeconds
         karaokeOffsetValueLabel.stringValue = String(format: "%+.2fs", t.karaokeOffsetSeconds)
+        backingOffsetSlider.doubleValue = t.backingOffsetSeconds
+        backingOffsetValueLabel.stringValue = String(format: "%+.2fs", t.backingOffsetSeconds)
         animSpeedSlider.doubleValue = Double(t.animationSpeed)
         animSpeedValueLabel.stringValue = String(format: "%.2fx", t.animationSpeed)
 
@@ -491,8 +560,10 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         t.notchStyle = ThemeNotchStyle.allCases[max(0, notchStylePopup.indexOfSelectedItem)]
         t.lineTransition = ThemeLineTransition.allCases[max(0, lineTransPopup.indexOfSelectedItem)]
         t.wordAnimation = ThemeWordAnimation.allCases[max(0, wordAnimPopup.indexOfSelectedItem)]
+        t.vocalSyncMode = VocalSyncMode.allCases[max(0, vocalSyncModePopup.indexOfSelectedItem)]
         t.wordSpeedScale = CGFloat((wordSpeedSlider.doubleValue * 20.0).rounded() / 20.0)
         t.karaokeOffsetSeconds = (karaokeOffsetSlider.doubleValue * 20.0).rounded() / 20.0
+        t.backingOffsetSeconds = (backingOffsetSlider.doubleValue * 20.0).rounded() / 20.0
         t.animationSpeed = CGFloat((animSpeedSlider.doubleValue * 20.0).rounded() / 20.0)
         return t
     }
@@ -500,27 +571,63 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     @objc private func onSliderChanged(_ sender: NSSlider) {
         let ws = (wordSpeedSlider.doubleValue * 20.0).rounded() / 20.0
         let off = (karaokeOffsetSlider.doubleValue * 20.0).rounded() / 20.0
+        let bgOff = (backingOffsetSlider.doubleValue * 20.0).rounded() / 20.0
         let ans = (animSpeedSlider.doubleValue * 20.0).rounded() / 20.0
         wordSpeedValueLabel.stringValue = String(format: "%.2fx", ws)
         karaokeOffsetValueLabel.stringValue = String(format: "%+.2fs", off)
+        backingOffsetValueLabel.stringValue = String(format: "%+.2fs", bgOff)
         animSpeedValueLabel.stringValue = String(format: "%.2fx", ans)
         onFieldEdited()
+    }
+
+    @objc private func onOffsetStepButton(_ sender: NSButton) {
+        let next = karaokeOffsetSlider.doubleValue + Double(sender.tag) / 100.0
+        karaokeOffsetSlider.doubleValue = max(-2.50, min(2.50, next))
+        onSliderChanged(karaokeOffsetSlider)
+    }
+
+    @objc private func onSpeedPresetButton(_ sender: NSButton) {
+        wordSpeedSlider.doubleValue = Double(sender.tag) / 100.0
+        onSliderChanged(wordSpeedSlider)
     }
 
     @objc private func onResetTempo() {
         wordSpeedSlider.doubleValue = 1.0
         karaokeOffsetSlider.doubleValue = 0.0
+        backingOffsetSlider.doubleValue = 0.0
         animSpeedSlider.doubleValue = 1.0
         onSliderChanged(wordSpeedSlider)
+    }
+
+    @objc private func onRecalibrateSyncTapped() {
+        onRecalibrateSync?()
     }
 
     private func updateContrastInfo(for t: TouchBarTheme) {
         let bg = NSColor(hex: t.backgroundHex)
         let mainRatio = NSColor(hex: t.mainTextHex).contrastRatio(with: bg)
         let bgRatio = NSColor(hex: t.backingTextHex).contrastRatio(with: bg)
-        let status = (mainRatio >= 4.5 && bgRatio >= 4.5) ? "WCAG AA Lolos" : "Kontras rendah (< 4.5:1)"
-        contrastLabel.stringValue = String(format: "Kontras Main: %.1f:1 | Back Vocal: %.1f:1 (%@)", mainRatio, bgRatio, status)
+        let status = (mainRatio >= 4.5 && bgRatio >= 4.5) ? L10n.tr("studio.contrast.pass") : L10n.tr("studio.contrast.fail")
+        contrastLabel.stringValue = L10n.tr("studio.contrast.summary", mainRatio, bgRatio, status)
         contrastLabel.textColor = (mainRatio >= 4.5 && bgRatio >= 4.5) ? .secondaryLabelColor : .systemOrange
+    }
+
+    @objc private func onSelectLanguage() {
+        let idx = languagePopup.indexOfSelectedItem
+        guard idx >= 0, idx < AppLanguage.allCases.count else { return }
+        L10n.currentLanguage = AppLanguage.allCases[idx]
+    }
+
+    @objc private func onLanguageDidChange() {
+        let selectedTabID = mainTabView?.selectedTabViewItem?.identifier as? String
+        setupUI()
+        reloadFromStore()
+        if let id = selectedTabID, let tv = mainTabView {
+            tv.selectTabViewItem(withIdentifier: id)
+        }
+        if window?.isVisible == true {
+            startPreviewAnimation()
+        }
     }
 
     @objc private func onSelectTheme() {

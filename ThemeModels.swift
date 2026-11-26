@@ -8,10 +8,10 @@ enum ThemeFontStyle: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .sans: return "System Sans"
-        case .rounded: return "Rounded"
-        case .serif: return "Editorial Serif"
-        case .mono: return "Monospace"
+        case .sans: return L10n.tr("font.sans")
+        case .rounded: return L10n.tr("font.rounded")
+        case .serif: return L10n.tr("font.serif")
+        case .mono: return L10n.tr("font.mono")
         }
     }
 
@@ -47,10 +47,10 @@ enum ThemeLayoutMode: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .standard: return "Klasik Seimbang"
-        case .centeredMinimal: return "Tengah Minimal"
-        case .rightFlow: return "Lirik Kiri + Judul Kanan"
-        case .lyricsOnly: return "Fokus Lirik Penuh"
+        case .standard: return L10n.tr("layout.standard")
+        case .centeredMinimal: return L10n.tr("layout.centeredMinimal")
+        case .rightFlow: return L10n.tr("layout.rightFlow")
+        case .lyricsOnly: return L10n.tr("layout.lyricsOnly")
         }
     }
 }
@@ -62,9 +62,9 @@ enum ThemeSlotPosition: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .left: return "Sisi Kiri"
-        case .right: return "Sisi Kanan"
-        case .hidden: return "Sembunyikan"
+        case .left: return L10n.tr("slot.left")
+        case .right: return L10n.tr("slot.right")
+        case .hidden: return L10n.tr("slot.hidden")
         }
     }
 }
@@ -76,9 +76,9 @@ enum ThemeBackingPlacement: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .below: return "Di Bawah Vokal Utama"
-        case .above: return "Di Atas Vokal Utama"
-        case .inlineBeside: return "Sejajar 1 Baris"
+        case .below: return L10n.tr("backing.below")
+        case .above: return L10n.tr("backing.above")
+        case .inlineBeside: return L10n.tr("backing.inline")
         }
     }
 }
@@ -90,9 +90,9 @@ enum ThemeTextAlign: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .center: return "Rata Tengah"
-        case .left: return "Rata Kiri"
-        case .right: return "Rata Kanan"
+        case .center: return L10n.tr("align.center")
+        case .left: return L10n.tr("align.left")
+        case .right: return L10n.tr("align.right")
         }
     }
 
@@ -112,9 +112,9 @@ enum ThemeProgressPosition: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .bottom: return "Garis Bawah"
-        case .top: return "Garis Atas"
-        case .hidden: return "Sembunyikan"
+        case .bottom: return L10n.tr("progress.bottom")
+        case .top: return L10n.tr("progress.top")
+        case .hidden: return L10n.tr("progress.hidden")
         }
     }
 }
@@ -126,9 +126,9 @@ enum ThemeEQStyle: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .bars: return "Bar Equalizer + Titik"
-        case .pulseDot: return "Titik Vokal Saja"
-        case .none: return "Nonaktif"
+        case .bars: return L10n.tr("eq.bars")
+        case .pulseDot: return L10n.tr("eq.pulseDot")
+        case .none: return L10n.tr("eq.none")
         }
     }
 }
@@ -143,12 +143,12 @@ enum ThemeLineTransition: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .pushUp: return "Dorong ke Atas"
-        case .pushDown: return "Turun ke Bawah"
-        case .slideLeft: return "Geser Samping"
-        case .crossfade: return "Crossfade Halus"
-        case .zoomSoft: return "Pop Skala Lembut"
-        case .none: return "Instan (Tanpa Transisi)"
+        case .pushUp: return L10n.tr("trans.pushUp")
+        case .pushDown: return L10n.tr("trans.pushDown")
+        case .slideLeft: return L10n.tr("trans.slideLeft")
+        case .crossfade: return L10n.tr("trans.crossfade")
+        case .zoomSoft: return L10n.tr("trans.zoomSoft")
+        case .none: return L10n.tr("trans.none")
         }
     }
 }
@@ -162,11 +162,11 @@ enum ThemeWordAnimation: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .karaokeLift: return "Karaoke + Angkat Huruf"
-        case .smoothWipe: return "Sapuan Warna Per Kata"
-        case .typewriter: return "Ketik Huruf Bertahap"
-        case .glowPulse: return "Sorot Tebal Reaktif"
-        case .solid: return "Statis Penuh"
+        case .karaokeLift: return L10n.tr("word.karaokeLift")
+        case .smoothWipe: return L10n.tr("word.smoothWipe")
+        case .typewriter: return L10n.tr("word.typewriter")
+        case .glowPulse: return L10n.tr("word.glowPulse")
+        case .solid: return L10n.tr("word.solid")
         }
     }
 }
@@ -178,9 +178,9 @@ enum ThemeColorSyncMode: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .adaptiveArtwork: return "Adaptif Sampul (Seimbang)"
-        case .vividArtwork: return "Sampul Lagu Kuat"
-        case .themeOnly: return "Warna Tema Kustom Saja"
+        case .adaptiveArtwork: return L10n.tr("color.adaptive")
+        case .vividArtwork: return L10n.tr("color.vivid")
+        case .themeOnly: return L10n.tr("color.themeOnly")
         }
     }
 }
@@ -192,9 +192,25 @@ enum ThemeNotchStyle: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .attachedBezel: return "Menempel Bezel Atas"
-        case .floatingIsland: return "Dynamic Island Mengambang"
-        case .edgeDockStrip: return "Strip Bezel Penuh"
+        case .attachedBezel: return L10n.tr("notch.attachedBezel")
+        case .floatingIsland: return L10n.tr("notch.floatingIsland")
+        case .edgeDockStrip: return L10n.tr("notch.edgeDockStrip")
+        }
+    }
+}
+
+enum VocalSyncMode: String, Codable, CaseIterable {
+    case balanced = "balanced"
+    case strictCrowded = "strictCrowded"
+    case fastLock = "fastLock"
+    case manual = "manual"
+
+    var displayName: String {
+        switch self {
+        case .balanced: return L10n.tr("syncMode.balanced")
+        case .strictCrowded: return L10n.tr("syncMode.strictCrowded")
+        case .fastLock: return L10n.tr("syncMode.fastLock")
+        case .manual: return L10n.tr("syncMode.manual")
         }
     }
 }
@@ -234,6 +250,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
     var animationSpeed: CGFloat
     var wordSpeedScale: CGFloat
     var karaokeOffsetSeconds: TimeInterval
+    var backingOffsetSeconds: TimeInterval
+    var vocalSyncMode: VocalSyncMode
     var colorSyncMode: ThemeColorSyncMode
     var notchStyle: ThemeNotchStyle
 
@@ -270,6 +288,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         animationSpeed: CGFloat = 1.0,
         wordSpeedScale: CGFloat = 1.0,
         karaokeOffsetSeconds: TimeInterval = 0.0,
+        backingOffsetSeconds: TimeInterval = 0.0,
+        vocalSyncMode: VocalSyncMode = .balanced,
         colorSyncMode: ThemeColorSyncMode = .adaptiveArtwork,
         notchStyle: ThemeNotchStyle = .attachedBezel
     ) {
@@ -305,6 +325,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         self.animationSpeed = animationSpeed
         self.wordSpeedScale = wordSpeedScale
         self.karaokeOffsetSeconds = karaokeOffsetSeconds
+        self.backingOffsetSeconds = backingOffsetSeconds
+        self.vocalSyncMode = vocalSyncMode
         self.colorSyncMode = colorSyncMode
         self.notchStyle = notchStyle
     }
@@ -346,6 +368,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         animationSpeed = try c.decodeIfPresent(CGFloat.self, forKey: .animationSpeed) ?? 1.0
         wordSpeedScale = try c.decodeIfPresent(CGFloat.self, forKey: .wordSpeedScale) ?? 1.0
         karaokeOffsetSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .karaokeOffsetSeconds) ?? 0.0
+        backingOffsetSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .backingOffsetSeconds) ?? 0.0
+        vocalSyncMode = try c.decodeIfPresent(VocalSyncMode.self, forKey: .vocalSyncMode) ?? .balanced
         colorSyncMode = try c.decodeIfPresent(ThemeColorSyncMode.self, forKey: .colorSyncMode) ?? .adaptiveArtwork
         notchStyle = try c.decodeIfPresent(ThemeNotchStyle.self, forKey: .notchStyle) ?? .attachedBezel
     }

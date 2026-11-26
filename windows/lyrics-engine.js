@@ -407,18 +407,68 @@ class DiskLyricsCache {
   }
 }
 
-async function fetchJson(url, timeoutMs = 2800, headers = {}) {
+async function fetchText(url, timeoutMs = 2800, headers = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal, headers });
     if (!res.ok) return null;
-    return await res.json();
+    return await res.text();
   } catch (_) {
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchJson(url, timeoutMs = 2800, headers = {}) {
+  const txt = await fetchText(url, timeoutMs, headers);
+  if (!txt) return null;
+  try {
+    return JSON.parse(txt);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function fetchKuwoForCandidate(cand, { title, resolvedTitle, resolvedArtist, duration }) {
+  const kw = cand.artist ? `${cand.track} ${cand.artist}` : cand.track;
+  if (!kw) return [];
+  const body = await fetchText(`https://search.kuwo.cn/r.s?all=${encodeURIComponent(kw)}&ft=music&pn=0&rn=4&rformat=json&encoding=utf8`, 2800, { 'User-Agent': 'Mozilla/5.0' });
+  if (!body) return [];
+  const chunks = body.split("{'").filter((c) => c.includes('MUSIC_'));
+  const items = [];
+  for (const ch of chunks) {
+    const ridM = ch.match(/MUSIC_(\d+)/);
+    if (!ridM) continue;
+    const song = (ch.match(/'SONGNAME':'([^']*)'/) || [])[1] || resolvedTitle;
+    const artist = ((ch.match(/'ARTIST':'([^']*)'/) || [])[1] || resolvedArtist).replace(/&/g, ', ');
+    const refDur = Number((ch.match(/'DURATION':'(\d+)'/) || [])[1] || 0) || duration;
+    const pre = scoreCandidate({ trackName: song, artistName: artist, rawInputTitle: title, expectedTitle: resolvedTitle, expectedArtist: resolvedArtist, refDuration, targetDuration: duration, hasSynced: true, hasWordTimings: false });
+    items.push({ rid: ridM[1], song, artist, refDur, pre });
+  }
+  items.sort((a, b) => b.pre - a.pre);
+  const out = [];
+  for (const item of items.slice(0, 2)) {
+    const payload = await fetchJson(`https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${item.rid}`, 2600, { 'User-Agent': 'Mozilla/5.0' });
+    const lrclist = payload?.data?.lrclist || [];
+    if (!lrclist.length) continue;
+    const lrcLines = [];
+    for (let i = 0; i < lrclist.length; i++) {
+      const txt = String(lrclist[i]?.lineLyric || '').trim();
+      const tVal = Number(lrclist[i]?.time);
+      if (!txt || !Number.isFinite(tVal) || tVal < 0) continue;
+      if (i === 0 && (txt.includes('词：') || txt.includes('曲：') || txt.includes(' - '))) continue;
+      const mins = Math.floor(tVal / 60);
+      const secs = (tVal - mins * 60).toFixed(3).padStart(6, '0');
+      lrcLines.push(`[${String(mins).padStart(2, '0')}:${secs}]${txt}`);
+    }
+    const parsed = parseLRC(lrcLines.join('\n'));
+    if (!parsed.length) continue;
+    const sc = scoreCandidate({ trackName: item.song, artistName: item.artist, rawInputTitle: title, expectedTitle: resolvedTitle, expectedArtist: resolvedArtist, refDuration: item.refDur, targetDuration: duration, hasSynced: true, hasWordTimings: false, parsedLines: parsed });
+    out.push({ lines: parsed, sourceName: 'Kuwo LRC', isEstimated: false, hasWordTimings: false, referenceDuration: item.refDur, matchScore: sc });
+  }
+  return out;
 }
 
 async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }) {
@@ -527,10 +577,53 @@ async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }
       }
     })();
 
-    await Promise.all([nePromise, kgPromise]);
+    const kwPromise = (async () => {
+      const hits = await fetchKuwoForCandidate(first, { title, resolvedTitle: resolved.title, resolvedArtist: resolved.artist, duration });
+      pool.push(...hits);
+    })();
+
+    await Promise.all([nePromise, kgPromise, kwPromise]);
   }
 
-  const validSynced = pool.filter((p) => !p.isEstimated && p.matchScore >= 65);
+  let validSynced = pool.filter((p) => !p.isEstimated && p.matchScore >= 65);
+
+  // Canonical Metadata Resolver (iTunes + Deezer) for Romanized / misspelled tracks
+  if (!validSynced.length && qStr) {
+    const enc = encodeURIComponent(qStr);
+    const [itJson, dzJson] = await Promise.all([
+      fetchJson(`https://itunes.apple.com/search?term=${enc}&media=music&entity=song&limit=4`, 2600),
+      fetchJson(`https://api.deezer.com/search?q=${enc}&limit=4`, 2600)
+    ]);
+    const meta = [];
+    for (const r of (itJson?.results || [])) {
+      const tn = cleanTitle(r.trackName || '');
+      const an = cleanArtist(r.artistName || '');
+      if (tn && an) meta.push({ track: tn, artist: an, dur: (r.trackTimeMillis || 0) / 1000 });
+    }
+    for (const r of (dzJson?.data || [])) {
+      const tn = cleanTitle(r.title || '');
+      const an = cleanArtist(r.artist?.name || '');
+      if (tn && an) meta.push({ track: tn, artist: an, dur: Number(r.duration || 0) });
+    }
+    meta.sort((a, b) => scoreCandidate({ trackName: b.track, artistName: b.artist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: b.dur, targetDuration: duration, hasSynced: true, hasWordTimings: false }) - scoreCandidate({ trackName: a.track, artistName: a.artist, rawInputTitle: title, expectedTitle: resolved.title, expectedArtist: resolved.artist, refDuration: a.dur, targetDuration: duration, hasSynced: true, hasWordTimings: false }));
+    if (meta[0]) {
+      const top = meta[0];
+      const [lrcCanon, kwCanon] = await Promise.all([
+        fetchJson(`https://lrclib.net/api/get?track_name=${encodeURIComponent(top.track)}&artist_name=${encodeURIComponent(top.artist)}`, 2600),
+        fetchKuwoForCandidate(top, { title, resolvedTitle: top.track, resolvedArtist: top.artist, duration })
+      ]);
+      pool.push(...kwCanon);
+      if (lrcCanon?.syncedLyrics) {
+        const lines = parseLRC(lrcCanon.syncedLyrics);
+        if (lines.length) {
+          const sc = scoreCandidate({ trackName: lrcCanon.trackName || top.track, artistName: lrcCanon.artistName || top.artist, rawInputTitle: title, expectedTitle: top.track, expectedArtist: top.artist, refDuration: lrcCanon.duration || duration, targetDuration: duration, hasSynced: true, hasWordTimings: false, parsedLines: lines });
+          pool.push({ lines, sourceName: 'LRCLIB', isEstimated: false, hasWordTimings: false, referenceDuration: lrcCanon.duration || duration, matchScore: sc });
+        }
+      }
+      validSynced = pool.filter((p) => !p.isEstimated && p.matchScore >= 65);
+    }
+  }
+
   validSynced.sort((a, b) => b.matchScore - a.matchScore);
   const picked = validSynced[0] || { lines: [], sourceName: 'None', isEstimated: false, hasWordTimings: false, referenceDuration: duration };
   if (picked.lines.length && diskCache) {
@@ -539,20 +632,22 @@ async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }
   return picked;
 }
 
-function computeLineProgress(line, elapsed, nextLineTime) {
+function computeLineProgress(line, elapsed, nextLineTime, wordSpeedScale = 1.0) {
   if (!line) return 1;
+  const speed = Math.min(2.2, Math.max(0.4, Number(wordSpeedScale) || 1.0));
   if (line.words && line.words.length) {
     const totalChars = Math.max(1, line.words.reduce((acc, w) => acc + w.text.length, 0));
+    const effElapsed = line.time + (elapsed - line.time) * speed;
     let before = 0;
     for (let i = 0; i < line.words.length; i++) {
       const w = line.words[i];
       const end = w.time + Math.max(0.07, w.duration);
-      if (elapsed < w.time) return before / totalChars;
-      if (elapsed <= end) {
-        const frac = (elapsed - w.time) / Math.max(0.07, w.duration);
+      if (effElapsed < w.time) return before / totalChars;
+      if (effElapsed <= end) {
+        const frac = (effElapsed - w.time) / Math.max(0.07, w.duration);
         return Math.min(1, Math.max(0, (before + frac * w.text.length) / totalChars));
       }
-      if (i + 1 < line.words.length && elapsed < line.words[i + 1].time) {
+      if (i + 1 < line.words.length && effElapsed < line.words[i + 1].time) {
         return (before + w.text.length) / totalChars;
       }
       before += w.text.length;
@@ -560,8 +655,8 @@ function computeLineProgress(line, elapsed, nextLineTime) {
     return 1;
   }
   const gap = Math.max(0.5, nextLineTime - line.time);
-  const span = Math.min(gap * 0.86, Math.max(1.0, (line.mainText || '').length * 0.085));
-  return Math.min(1, Math.max(0, (elapsed - line.time) / Math.max(0.4, span)));
+  const span = Math.min(gap * 0.86, Math.max(0.75, (line.mainText || '').length * 0.078)) / speed;
+  return Math.min(1, Math.max(0, (elapsed - line.time) / Math.max(0.35, span)));
 }
 
 module.exports = {

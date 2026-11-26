@@ -11,6 +11,7 @@ const {
   fetchLyrics,
   computeLineProgress
 } = require('./lyrics-engine');
+const { LANGUAGES, t } = require('./i18n');
 
 const PHI = 1.6180339887;
 const STYLE_DIMENSIONS = {
@@ -34,6 +35,30 @@ let smtcProc = null;
 let currentStyle = 'attachedBezel';
 let isExpanded = false;
 let romanizeEnabled = true;
+let appLanguage = 'en';
+
+function settingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettings() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+    if (raw.style && STYLE_DIMENSIONS[raw.style]) currentStyle = raw.style;
+    if (typeof raw.romanize === 'boolean') romanizeEnabled = raw.romanize;
+    if (raw.language && LANGUAGES.some((l) => l.code === raw.language)) appLanguage = raw.language;
+  } catch (_) {}
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(settingsPath(), JSON.stringify({
+      style: currentStyle,
+      romanize: romanizeEnabled,
+      language: appLanguage
+    }, null, 2), 'utf8');
+  } catch (_) {}
+}
 
 let playback = {
   title: '',
@@ -47,7 +72,7 @@ let playback = {
 };
 let currentTrackKey = '';
 let activeLyrics = [];
-let lyricsStatus = 'Play music in Chrome, Edge, Spotify, or Apple Music';
+let lyricsStatus = t(appLanguage, 'idleStatus');
 
 function computeBounds(expanded) {
   const disp = screen.getPrimaryDisplay();
@@ -146,7 +171,7 @@ async function handleMediaState(next) {
   if (title && trackKey !== currentTrackKey) {
     currentTrackKey = trackKey;
     activeLyrics = [];
-    lyricsStatus = `Searching lyrics: ${cleanTitle(title)}...`;
+    lyricsStatus = `${t(appLanguage, 'searchingLyrics')} ${cleanTitle(title)}...`;
     const cacheDir = path.join(app.getPath('userData'), 'LyricsCache');
     const res = await fetchLyrics({ title, artist, album: playback.album, duration, cacheDir });
     if (currentTrackKey === trackKey) {
@@ -160,7 +185,7 @@ async function handleMediaState(next) {
   } else if (!title) {
     currentTrackKey = '';
     activeLyrics = [];
-    lyricsStatus = 'Play music in Chrome, Edge, Spotify, or Apple Music';
+    lyricsStatus = t(appLanguage, 'idleStatus');
   }
 }
 
@@ -221,36 +246,52 @@ function buildTray() {
   tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip('NotchLyrics');
   const rebuildMenu = () => {
+    const langItems = LANGUAGES.map((l) => ({
+      label: l.name,
+      type: 'radio',
+      checked: appLanguage === l.code,
+      click: () => {
+        appLanguage = l.code;
+        if (!playback.title) lyricsStatus = t(appLanguage, 'idleStatus');
+        saveSettings();
+        rebuildMenu();
+      }
+    }));
+
     const menu = Menu.buildFromTemplate([
-      { label: 'NotchLyrics for Windows', enabled: false },
+      { label: t(appLanguage, 'appHeader'), enabled: false },
       { type: 'separator' },
       {
-        label: 'Notch Style: Attached Bezel',
+        label: t(appLanguage, 'styleAttached'),
         type: 'radio',
         checked: currentStyle === 'attachedBezel',
-        click: () => { currentStyle = 'attachedBezel'; updateWindowFrame(isExpanded); }
+        click: () => { currentStyle = 'attachedBezel'; saveSettings(); updateWindowFrame(isExpanded); rebuildMenu(); }
       },
       {
-        label: 'Notch Style: Floating Island',
+        label: t(appLanguage, 'styleFloating'),
         type: 'radio',
         checked: currentStyle === 'floatingIsland',
-        click: () => { currentStyle = 'floatingIsland'; updateWindowFrame(isExpanded); }
+        click: () => { currentStyle = 'floatingIsland'; saveSettings(); updateWindowFrame(isExpanded); rebuildMenu(); }
       },
       {
-        label: 'Notch Style: Edge Dock Strip',
+        label: t(appLanguage, 'styleStrip'),
         type: 'radio',
         checked: currentStyle === 'edgeDockStrip',
-        click: () => { currentStyle = 'edgeDockStrip'; updateWindowFrame(isExpanded); }
+        click: () => { currentStyle = 'edgeDockStrip'; saveSettings(); updateWindowFrame(isExpanded); rebuildMenu(); }
       },
       { type: 'separator' },
       {
-        label: 'Romanize Non-Latin Lyrics',
+        label: t(appLanguage, 'romanizeLyrics'),
         type: 'checkbox',
         checked: romanizeEnabled,
-        click: (item) => { romanizeEnabled = item.checked; }
+        click: (item) => { romanizeEnabled = item.checked; saveSettings(); rebuildMenu(); }
+      },
+      {
+        label: `${t(appLanguage, 'languageMenu')}: ${LANGUAGES.find((l) => l.code === appLanguage)?.name || 'English'}`,
+        submenu: langItems
       },
       { type: 'separator' },
-      { label: 'Quit NotchLyrics', click: () => app.quit() }
+      { label: t(appLanguage, 'quitApp'), click: () => app.quit() }
     ]);
     tray.setContextMenu(menu);
   };
@@ -261,6 +302,8 @@ ipcMain.on('notch-command', (_event, cmd) => sendMediaCommand(cmd));
 ipcMain.on('notch-hover', (_event, expanded) => updateWindowFrame(expanded));
 
 app.whenReady().then(() => {
+  loadSettings();
+  if (!playback.title) lyricsStatus = t(appLanguage, 'idleStatus');
   createWindow();
   buildTray();
   startWindowsSMTC();

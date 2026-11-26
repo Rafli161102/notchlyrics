@@ -110,6 +110,9 @@ final class NotchLyricsWindowController: NSWindowController {
 
     func applyTheme(_ theme: TouchBarTheme) {
         baseTheme = theme
+        previousButton.setAccessibilityLabel(L10n.tr("a11y.prevTrack"))
+        playPauseButton.setAccessibilityLabel(L10n.tr("a11y.playPause"))
+        nextButton.setAccessibilityLabel(L10n.tr("a11y.nextTrack"))
         notchView.applyTheme(Self.notchTheme(from: theme, expanded: isExpanded))
         styleText(with: theme)
         applyNotchLayout(animated: false)
@@ -228,9 +231,9 @@ final class NotchLyricsWindowController: NSWindowController {
         timeLabel.alignment = .right
         container.addSubview(timeLabel)
 
-        configureButton(previousButton, symbol: "backward.fill", label: "Lagu sebelumnya", action: #selector(previousTrack))
-        configureButton(playPauseButton, symbol: "pause.fill", label: "Putar atau jeda", action: #selector(togglePlayPause))
-        configureButton(nextButton, symbol: "forward.fill", label: "Lagu berikutnya", action: #selector(nextTrack))
+        configureButton(previousButton, symbol: "backward.fill", label: L10n.tr("a11y.prevTrack"), action: #selector(previousTrack))
+        configureButton(playPauseButton, symbol: "pause.fill", label: L10n.tr("a11y.playPause"), action: #selector(togglePlayPause))
+        configureButton(nextButton, symbol: "forward.fill", label: L10n.tr("a11y.nextTrack"), action: #selector(nextTrack))
 
         for view in [artworkView, titleLabel, subtitleLabel, timeLabel, previousButton, playPauseButton, nextButton] {
             view.alphaValue = 0

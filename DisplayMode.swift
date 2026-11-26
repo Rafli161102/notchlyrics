@@ -19,10 +19,10 @@ enum DisplayMode: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .touchBar: return "Touch Bar"
-        case .notch: return "Notch"
-        case .both: return "Touch Bar + Notch"
-        case .hidden: return "Sembunyikan"
+        case .touchBar: return L10n.tr("display.touchBar")
+        case .notch: return L10n.tr("display.notch")
+        case .both: return L10n.tr("display.both")
+        case .hidden: return L10n.tr("display.hidden")
         }
     }
 }

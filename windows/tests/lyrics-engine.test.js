@@ -14,6 +14,7 @@ const {
   romanizeKoreanHangul,
   isRTLScript,
   DiskLyricsCache,
+  fetchLyrics,
   computeLineProgress
 } = require('../lyrics-engine');
 
@@ -93,6 +94,21 @@ check(yrc.length === 1 && yrc[0].words.length === 2, 'parseYRC decodes word-leve
 const lrc = parseLRC('[00:10.00]Say it again (say it again)\n[00:15.00]Next');
 check(lrc.length === 2 && lrc[0].mainText === 'Say it again' && lrc[0].backingText === 'say it again', 'parseLRC splits main & backing vocal');
 check(computeLineProgress(yrc[0], 1.75, 5.0) > 0.5, 'computeLineProgress interpolates word cursor accurately');
+check(computeLineProgress(yrc[0], 1.35, 5.0, 2.0) > computeLineProgress(yrc[0], 1.35, 5.0, 0.5), 'wordSpeedScale adjusts karaoke sweep pace smoothly');
+const {
+  LANGUAGES,
+  TRANSLATIONS,
+  t
+} = require('../i18n');
+
+check(typeof fetchLyrics === 'function', 'fetchLyrics pipeline exports cleanly with multi-source support');
+let winI18nGaps = 0;
+for (const [k, row] of Object.entries(TRANSLATIONS)) {
+  for (const lang of LANGUAGES) {
+    if (!row[lang.code] || !String(row[lang.code]).trim()) winI18nGaps++;
+  }
+}
+check(winI18nGaps === 0 && t('en', 'languageMenu') === 'Settings Language' && t('id', 'languageMenu') === 'Bahasa Pengaturan', 'Windows multi-language UI covers all 6 supported languages');
 
 check(romanizeKoreanHangul('사랑해요 괜찮아 빨리') === 'saranghaeyo gwaenchana ppalli', 'algorithmic Korean Hangul handles liaison and assimilation');
 check(isRTLScript('حبيبي يا نور العين') === true, 'detects Arabic RTL script');

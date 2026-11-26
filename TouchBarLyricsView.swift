@@ -490,41 +490,46 @@ final class TouchBarLyricsView: NSView {
         let mainChanged = (mainText != currentMainSignature)
         let backingChanged = (formattedBacking != currentBackingSignature)
 
+        let now = Date()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if mainChanged {
+            let isRapidBurst = now.timeIntervalSince(lineAppearDate) < 0.70 || mainText.count >= 44
+            let animDur = (isRapidBurst ? 0.11 : 0.19) / Double(speed)
             let hadVisibleOldMain = !mainLyricLabel.isHidden && !currentMainSignature.isEmpty && !mainText.isEmpty
             if hadVisibleOldMain && !reduceMotion && theme.lineTransition != .none {
-                prepareOutgoingGhost(from: mainLyricLabel, onto: outgoingMainLayer, token: &mainTransitionToken, duration: 0.20 / Double(speed), style: theme.lineTransition)
+                prepareOutgoingGhost(from: mainLyricLabel, onto: outgoingMainLayer, token: &mainTransitionToken, duration: animDur, style: theme.lineTransition)
             } else {
                 hideGhostLayer(outgoingMainLayer)
             }
 
             currentMainSignature = mainText
-            lineAppearDate = Date()
+            lineAppearDate = now
 
             mainLyricLabel.isHidden = mainText.isEmpty
             if !reduceMotion {
-                applyLineTransition(duration: 0.20 / Double(speed))
+                applyLineTransition(duration: animDur)
             }
             needsLayout = true
             lastRenderedQuantizedStep = -1
         }
 
         if backingChanged {
+            let isRapidBacking = now.timeIntervalSince(backingAppearDate) < 0.70
+            let bgAnimDur = (isRapidBacking ? 0.11 : 0.18) / Double(speed)
             let hadVisibleOldBacking = !backingLyricLabel.isHidden && !currentBackingSignature.isEmpty
             if hadVisibleOldBacking && !reduceMotion && theme.lineTransition != .none {
-                prepareOutgoingGhost(from: backingLyricLabel, onto: outgoingBackingLayer, token: &backingTransitionToken, duration: 0.18 / Double(speed), style: theme.lineTransition)
+                prepareOutgoingGhost(from: backingLyricLabel, onto: outgoingBackingLayer, token: &backingTransitionToken, duration: bgAnimDur, style: theme.lineTransition)
             } else {
                 hideGhostLayer(outgoingBackingLayer)
             }
 
             currentBackingSignature = formattedBacking
-            backingAppearDate = Date()
+            backingAppearDate = now
 
             if !formattedBacking.isEmpty {
                 backingLyricLabel.isHidden = false
                 if !reduceMotion && theme.lineTransition != .none {
-                    animateBackingEntrance(duration: 0.20 / Double(speed))
+                    animateBackingEntrance(duration: bgAnimDur)
                 }
             } else {
                 backingLyricLabel.isHidden = true
@@ -537,8 +542,7 @@ final class TouchBarLyricsView: NSView {
         let animActive = characterAnimationEnabled && !reduceMotion && theme.wordAnimation != .solid
         let clampedMainProg = animActive ? min(max(0, lineProgress), 1) : 1.0
         let clampedBackProg = animActive ? min(max(0, backingLineProgress ?? lineProgress), 1) : 1.0
-        let now = Date()
-        let revealSpan = 0.13 / Double(speed)
+        let revealSpan = 0.12 / Double(speed)
         let mainReveal: CGFloat = animActive ? min(1.0, CGFloat(max(0.0, now.timeIntervalSince(lineAppearDate) / revealSpan))) : 1.0
         let backReveal: CGFloat = animActive ? min(1.0, CGFloat(max(0.0, now.timeIntervalSince(backingAppearDate) / revealSpan))) : 1.0
 
@@ -607,7 +611,8 @@ final class TouchBarLyricsView: NSView {
                     sungColor: effectiveMainColor,
                     activeColor: currentAccentColor,
                     upcomingColor: baseUpcoming,
-                    alignment: align
+                    alignment: align,
+                    compactBounce: hasBoth
                 )
             } else {
                 mainLyricLabel.stringValue = ""
@@ -627,7 +632,8 @@ final class TouchBarLyricsView: NSView {
                     sungColor: currentBackingColor,
                     activeColor: effectiveMainColor,
                     upcomingColor: currentBackingColor.withAlphaComponent(0.55),
-                    alignment: backingLyricLabel.alignment
+                    alignment: backingLyricLabel.alignment,
+                    compactBounce: true
                 )
             } else {
                 backingLyricLabel.stringValue = ""
@@ -917,8 +923,10 @@ final class TouchBarLyricsView: NSView {
         sungColor: NSColor,
         activeColor: NSColor,
         upcomingColor: NSColor,
-        alignment: NSTextAlignment
+        alignment: NSTextAlignment,
+        compactBounce: Bool = false
     ) -> NSAttributedString {
+        let bounceScale: CGFloat = compactBounce ? 0.55 : 1.0
         let result = NSMutableAttributedString()
         let baseFont = theme.fontStyle.font(size: fontSize, weight: baseWeight)
         let paragraph = NSMutableParagraphStyle()
@@ -1043,13 +1051,13 @@ final class TouchBarLyricsView: NSView {
                     let intensity = 1.0 - Self.smoothstep(0.0, 1.45, abs(dist + 0.05))
                     let c = sungColor.blended(with: activeColor, fraction: min(1.0, 0.42 + intensity * (0.50 + onset * 0.15)))
                     color = c.withAlphaComponent(max(0.86, charAlphaFactor))
-                    baselineOffset = intensity * (0.70 + vocalBoost * 0.55 + intonation * 1.10 + onset * 0.65)
+                    baselineOffset = intensity * (0.70 + vocalBoost * 0.55 + intonation * 1.10 + onset * 0.65) * bounceScale
                 } else {
                     // Anticipatory chromatic pre-glow for upcoming syllable readability
                     let edgeBlend = 1.0 - Self.smoothstep(1.1, 3.5, dist)
                     let c = upcomingColor.blended(with: activeColor, fraction: edgeBlend * (0.48 + intonation * 0.16))
                     color = c.withAlphaComponent(c.alphaComponent * charAlphaFactor)
-                    baselineOffset = edgeBlend * (0.22 + intonation * 0.24)
+                    baselineOffset = edgeBlend * (0.22 + intonation * 0.24) * bounceScale
                 }
             }
 

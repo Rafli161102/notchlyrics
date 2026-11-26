@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var isEstimatedLyrics = false
     private var hasExactWordTimings = false
     private var isFetchingLyrics = false
-    private var lyricsStatusText = "Putar lagu di Safari"
+    private var lyricsStatusText = L10n.tr("status.playInSafari")
     private var autoVocalOffset: TimeInterval = 0
     private var autoBackingOffset: TimeInterval = 0
     private var artworkPalette: SongColorPalette?
@@ -207,7 +207,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         setupStatusBar()
         setupTouchBar()
 
+        vocalSync.syncMode = ThemeStore.shared.activeTheme.vocalSyncMode
+
+        NotificationCenter.default.addObserver(
+            forName: L10n.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            if self.currentState.title.isEmpty {
+                self.lyricsStatusText = L10n.tr(self.isUsingNativePoller ? "status.waitingMedia" : "status.playInSafari")
+            }
+            self.notchWindowController?.applyTheme(ThemeStore.shared.activeTheme)
+            self.refreshDisplay()
+        }
+
         ThemeStore.shared.onThemeChanged = { [weak self] theme in
+            self?.vocalSync.syncMode = theme.vocalSyncMode
+            if theme.vocalSyncMode == .manual {
+                self?.autoVocalOffset = 0
+                self?.autoBackingOffset = 0
+            }
             self?.lyricsView.applyTheme(theme)
             self?.notchWindowController?.applyTheme(theme)
             self?.refreshDisplay()
@@ -429,7 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     }
 
     private func startNativeAppleScriptPoller() {
-        lyricsStatusText = "Menunggu pemutar media (Music/Spotify/Safari)..."
+        lyricsStatusText = L10n.tr("status.waitingMedia")
         appleEventsPollTimer?.invalidate()
         let t = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
             self?.pollNativePlayersOnce()
@@ -591,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             autoVocalOffset = 0
             autoBackingOffset = 0
             resetArtworkPalette()
-            lyricsStatusText = "Putar lagu di Safari"
+            lyricsStatusText = L10n.tr("status.playInSafari")
             stopRenderTimer()
             vocalSync.stop()
             refreshDisplay()
@@ -632,7 +652,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             resetArtworkPalette()
             stopRenderTimer()
             vocalSync.stop()
-            lyricsStatusText = "Menunggu audio dari Safari..."
+            lyricsStatusText = L10n.tr("status.waitingSafariAudio")
             refreshDisplay()
             return
         }
@@ -654,7 +674,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             lyricsSourceName = ""
             isEstimatedLyrics = false
             isFetchingLyrics = true
-            lyricsStatusText = "Mencari lirik: \(fetcher.cleanTitle(next.title))..."
+            lyricsStatusText = L10n.tr("status.searchingLyrics", fetcher.cleanTitle(next.title))
             resetArtworkPalette()
             vocalSync.resetForNewTrack()
             loadLyrics(for: next)
@@ -831,10 +851,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
                 lineProg = cur.singingProgress(at: elapsed, nextLineTime: nextT, wordSpeedScale: wordScale)
 
                 if let rawBg = cur.backingText, !rawBg.isEmpty {
-                    let effBackStart = (cur.backingTime ?? cur.time) + autoBackingOffset + activeTheme.karaokeOffsetSeconds
+                    let backingDelta = autoBackingOffset + activeTheme.backingOffsetSeconds
+                    let effBackStart = (cur.backingTime ?? cur.time) + backingDelta + activeTheme.karaokeOffsetSeconds
                     if elapsed >= effBackStart - 0.06 || cur.mainText.isEmpty {
                         backingText = rawBg
-                        backProg = cur.backingProgress(at: elapsed - autoBackingOffset, nextLineTime: nextT, wordSpeedScale: wordScale)
+                        backProg = cur.backingProgress(at: elapsed - backingDelta, nextLineTime: nextT, wordSpeedScale: wordScale)
                     }
                 }
             } else {
@@ -845,7 +866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             }
         } else if !currentState.title.isEmpty {
             let cleanT = fetcher.cleanTitle(currentState.title)
-            mainText = isFetchingLyrics ? "Mencari lirik: \(cleanT)..." : cleanT
+            mainText = isFetchingLyrics ? L10n.tr("status.searchingLyrics", cleanT) : cleanT
             let cleanA = fetcher.cleanArtist(currentState.artist)
             backingText = cleanA.isEmpty ? nil : cleanA
         }
@@ -911,13 +932,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         mainMenu.removeAllItems()
 
         let trackInfo = currentState.title.isEmpty
-            ? "Tidak ada lagu aktif"
+            ? L10n.tr("status.noActiveTrack")
             : "\(fetcher.cleanTitle(currentState.title)) - \(fetcher.cleanArtist(currentState.artist))"
         let infoItem = NSMenuItem(title: trackInfo, action: nil, keyEquivalent: "")
         infoItem.isEnabled = false
         mainMenu.addItem(infoItem)
 
-        let srcStr = lyricsSourceName.isEmpty ? "Sumber lirik: -" : "Sumber lirik: \(lyricsSourceName)"
+        let srcStr = lyricsSourceName.isEmpty
+            ? L10n.tr("status.lyricsSource", "-")
+            : L10n.tr("status.lyricsSource", lyricsSourceName)
         let srcItem = NSMenuItem(title: srcStr, action: nil, keyEquivalent: "")
         srcItem.isEnabled = false
         mainMenu.addItem(srcItem)
@@ -925,24 +948,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         let durMins = Int(currentState.duration) / 60
         let durSecs = Int(currentState.duration) % 60
         let bpmVal = Int(vocalSync.currentBPM().rounded())
-        let tempoStr = String(
-            format: "Tempo: %@ | Panjang: %02d:%02d | Word Speed: %.2fx",
-            bpmVal >= 55 ? "\(bpmVal) BPM" : "Membaca BPM...",
-            durMins, durSecs,
-            ThemeStore.shared.activeTheme.wordSpeedScale
-        )
+        let bpmLabel = bpmVal >= 55 ? L10n.tr("status.bpmValue", bpmVal) : L10n.tr("status.readingBpm")
+        let tempoStr = L10n.tr("status.tempoLine", bpmLabel, durMins, durSecs, Double(ThemeStore.shared.activeTheme.wordSpeedScale))
         let tempoItem = NSMenuItem(title: tempoStr, action: nil, keyEquivalent: "")
         tempoItem.isEnabled = false
         mainMenu.addItem(tempoItem)
 
-        let syncLabel = autoVocalSyncEnabled ? vocalSync.statusDescription : "Auto-Sync Vokal: Nonaktif"
+        let syncLabel = autoVocalSyncEnabled ? vocalSync.statusDescription : L10n.tr("status.autoSyncOff")
         let syncInfo = NSMenuItem(title: syncLabel, action: nil, keyEquivalent: "")
         syncInfo.isEnabled = false
         mainMenu.addItem(syncInfo)
 
         mainMenu.addItem(NSMenuItem.separator())
 
-        let showTitle = isModalPresented ? "Sembunyikan Touch Bar Lirik" : "Tampilkan Lirik di Touch Bar"
+        let showTitle = isModalPresented ? L10n.tr("menu.hideTouchBar") : L10n.tr("menu.showTouchBar")
         let showItem = NSMenuItem(title: showTitle, action: #selector(toggleTouchBarModal), keyEquivalent: "t")
         showItem.target = self
         mainMenu.addItem(showItem)
@@ -955,7 +974,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             item.state = displayMode == mode ? .on : .off
             displayMenu.addItem(item)
         }
-        let displayParent = NSMenuItem(title: "Tampilkan Lirik di: \(displayMode.displayName)", action: nil, keyEquivalent: "")
+        let displayParent = NSMenuItem(title: L10n.tr("menu.displayOn", displayMode.displayName), action: nil, keyEquivalent: "")
         displayParent.submenu = displayMenu
         mainMenu.addItem(displayParent)
 
@@ -967,53 +986,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             item.state = (ThemeStore.shared.activeTheme.notchStyle == ns) ? .on : .off
             notchStyleMenu.addItem(item)
         }
-        let notchParent = NSMenuItem(title: "Gaya Notch: \(ThemeStore.shared.activeTheme.notchStyle.displayName)", action: nil, keyEquivalent: "")
+        let notchParent = NSMenuItem(title: L10n.tr("menu.notchStyle", ThemeStore.shared.activeTheme.notchStyle.displayName), action: nil, keyEquivalent: "")
         notchParent.submenu = notchStyleMenu
         mainMenu.addItem(notchParent)
 
-        let autoItem = NSMenuItem(title: "Otomatis Muncul Saat Memutar", action: #selector(toggleAutoShow), keyEquivalent: "a")
+        let autoItem = NSMenuItem(title: L10n.tr("menu.autoShow"), action: #selector(toggleAutoShow), keyEquivalent: "a")
         autoItem.target = self
         autoItem.state = autoShowEnabled ? .on : .off
         mainMenu.addItem(autoItem)
 
-        let safariItem = NSMenuItem(title: "Sumber: Hanya Safari", action: #selector(toggleSafariOnly), keyEquivalent: "s")
+        let safariItem = NSMenuItem(title: L10n.tr("menu.safariOnly"), action: #selector(toggleSafariOnly), keyEquivalent: "s")
         safariItem.target = self
         safariItem.state = safariOnlyEnabled ? .on : .off
         mainMenu.addItem(safariItem)
 
-        let vocalItem = NSMenuItem(title: "Auto-Sync dari Audio Vokal", action: #selector(toggleAutoVocalSync), keyEquivalent: "v")
+        let vocalItem = NSMenuItem(title: L10n.tr("menu.autoVocalSync"), action: #selector(toggleAutoVocalSync), keyEquivalent: "v")
         vocalItem.target = self
         vocalItem.state = autoVocalSyncEnabled ? .on : .off
         mainMenu.addItem(vocalItem)
 
-        let resetSyncItem = NSMenuItem(title: "Reset Offset Auto-Sync Vokal", action: #selector(resetAutoSyncOffset), keyEquivalent: "")
+        let syncModeMenu = NSMenu()
+        for m in VocalSyncMode.allCases {
+            let item = NSMenuItem(title: m.displayName, action: #selector(selectVocalSyncMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = m.rawValue
+            item.state = (m == ThemeStore.shared.activeTheme.vocalSyncMode) ? .on : .off
+            syncModeMenu.addItem(item)
+        }
+        let syncModeParent = NSMenuItem(title: L10n.tr("menu.syncMode", ThemeStore.shared.activeTheme.vocalSyncMode.displayName), action: nil, keyEquivalent: "")
+        syncModeParent.submenu = syncModeMenu
+        mainMenu.addItem(syncModeParent)
+
+        let recalibrateItem = NSMenuItem(title: L10n.tr("menu.recalibrateSync"), action: #selector(recalibrateAutoSyncNow), keyEquivalent: "")
+        recalibrateItem.target = self
+        mainMenu.addItem(recalibrateItem)
+
+        let resetSyncItem = NSMenuItem(title: L10n.tr("menu.resetSyncOffset"), action: #selector(resetAutoSyncOffset), keyEquivalent: "")
         resetSyncItem.target = self
         mainMenu.addItem(resetSyncItem)
 
-        let refreshLyricsItem = NSMenuItem(title: "Cari Ulang Lirik Online (Lewati Cache)", action: #selector(forceRefreshLyrics), keyEquivalent: "r")
+        let refreshLyricsItem = NSMenuItem(title: L10n.tr("menu.refreshLyrics"), action: #selector(forceRefreshLyrics), keyEquivalent: "r")
         refreshLyricsItem.target = self
         refreshLyricsItem.isEnabled = !currentState.title.isEmpty
         mainMenu.addItem(refreshLyricsItem)
 
-        let nudgeAheadItem = NSMenuItem(title: "Majukan Timing Lirik (+0.25s)", action: #selector(nudgeLyricsAhead), keyEquivalent: "]")
-        nudgeAheadItem.target = self
-        mainMenu.addItem(nudgeAheadItem)
+        for (keyId, hundredths, key) in [
+            ("menu.nudgeAhead25", 25, "]"),
+            ("menu.nudgeAhead05", 5, ""),
+            ("menu.nudgeBack05", -5, ""),
+            ("menu.nudgeBack25", -25, "[")
+        ] {
+            let item = NSMenuItem(title: L10n.tr(keyId), action: #selector(nudgeLyricsStep(_:)), keyEquivalent: key)
+            item.target = self
+            item.tag = hundredths
+            mainMenu.addItem(item)
+        }
 
-        let nudgeBackItem = NSMenuItem(title: "Mundurkan Timing Lirik (-0.25s)", action: #selector(nudgeLyricsBack), keyEquivalent: "[")
-        nudgeBackItem.target = self
-        mainMenu.addItem(nudgeBackItem)
-
-        let romanizeItem = NSMenuItem(title: "Romanisasi Lirik (Romaji/Pinyin)", action: #selector(toggleRomanizeLyrics), keyEquivalent: "l")
+        let romanizeItem = NSMenuItem(title: L10n.tr("menu.romanize"), action: #selector(toggleRomanizeLyrics), keyEquivalent: "l")
         romanizeItem.target = self
         romanizeItem.state = romanizeEnabled ? .on : .off
         mainMenu.addItem(romanizeItem)
 
-        let charAnimItem = NSMenuItem(title: "Animasi Per Huruf", action: #selector(toggleCharacterAnimation), keyEquivalent: "h")
+        let charAnimItem = NSMenuItem(title: L10n.tr("menu.charAnim"), action: #selector(toggleCharacterAnimation), keyEquivalent: "h")
         charAnimItem.target = self
         charAnimItem.state = characterAnimationEnabled ? .on : .off
         mainMenu.addItem(charAnimItem)
 
-        let artworkColorItem = NSMenuItem(title: "Warna Mengikuti Artwork Lagu", action: #selector(toggleArtworkColors), keyEquivalent: "w")
+        let artworkColorItem = NSMenuItem(title: L10n.tr("menu.artworkColors"), action: #selector(toggleArtworkColors), keyEquivalent: "w")
         artworkColorItem.target = self
         artworkColorItem.state = artworkColorsEnabled ? .on : .off
         mainMenu.addItem(artworkColorItem)
@@ -1030,17 +1069,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
             themeMenu.addItem(item)
         }
         themeMenu.addItem(NSMenuItem.separator())
-        let customizeItem = NSMenuItem(title: "Kustomisasi Tema, Tata Letak & Animasi...", action: #selector(openThemeEditor), keyEquivalent: ",")
+        let customizeItem = NSMenuItem(title: L10n.tr("menu.customizeStudio"), action: #selector(openThemeEditor), keyEquivalent: ",")
         customizeItem.target = self
         themeMenu.addItem(customizeItem)
 
-        let themeParent = NSMenuItem(title: "Tema: \(ThemeStore.shared.activeTheme.name)", action: nil, keyEquivalent: "")
+        let themeParent = NSMenuItem(title: L10n.tr("menu.theme", ThemeStore.shared.activeTheme.name), action: nil, keyEquivalent: "")
         themeParent.submenu = themeMenu
         mainMenu.addItem(themeParent)
 
+        // Language Switcher submenu
+        let langMenu = NSMenu()
+        for lang in AppLanguage.allCases {
+            let item = NSMenuItem(title: lang.displayName, action: #selector(selectAppLanguage(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = lang.rawValue
+            item.state = (lang == L10n.currentLanguage) ? .on : .off
+            langMenu.addItem(item)
+        }
+        let langParent = NSMenuItem(title: L10n.tr("menu.language", L10n.currentLanguage.displayName), action: nil, keyEquivalent: "")
+        langParent.submenu = langMenu
+        mainMenu.addItem(langParent)
+
         mainMenu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Keluar TouchBarLyrics", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: L10n.tr("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         mainMenu.addItem(quitItem)
     }
@@ -1111,17 +1163,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         guard !currentState.title.isEmpty else { return }
         fetcher.clearCacheEntry(forKey: currentTrackKey, rawTitle: currentState.title, rawArtist: currentState.artist)
         isFetchingLyrics = true
-        lyricsSourceName = "Mencari online..."
+        lyricsSourceName = L10n.tr("status.searchingOnline")
         refreshDisplay()
         loadLyrics(for: currentState, forceRefresh: true)
     }
 
-    @objc private func nudgeLyricsAhead() {
-        adjustUserKaraokeOffset(by: 0.25)
+    @objc private func selectAppLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let lang = AppLanguage(rawValue: raw) else { return }
+        L10n.currentLanguage = lang
     }
 
-    @objc private func nudgeLyricsBack() {
-        adjustUserKaraokeOffset(by: -0.25)
+    @objc private func nudgeLyricsStep(_ sender: NSMenuItem) {
+        adjustUserKaraokeOffset(by: Double(sender.tag) / 100.0)
+    }
+
+    @objc private func selectVocalSyncMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = VocalSyncMode(rawValue: raw) else { return }
+        var t = ThemeStore.shared.activeTheme
+        if t.isBuiltIn {
+            t = ThemeStore.shared.duplicateTheme(t, newName: "\(t.name) Custom")
+        }
+        t.vocalSyncMode = mode
+        ThemeStore.shared.upsertTheme(t, makeActive: true)
+    }
+
+    @objc func recalibrateAutoSyncNow() {
+        vocalSync.resetOffsetManual()
+        autoVocalOffset = 0
+        autoBackingOffset = 0
+        if autoVocalSyncEnabled && currentState.playing && ThemeStore.shared.activeTheme.vocalSyncMode != .manual {
+            vocalSync.startIfNeeded()
+        }
+        if !currentTrackKey.isEmpty && !activeLyrics.isEmpty && !isEstimatedLyrics {
+            fetcher.updateCalibration(
+                forKey: currentTrackKey,
+                rawTitle: currentState.title,
+                rawArtist: currentState.artist,
+                leadOffset: 0,
+                backingOffset: 0,
+                bpm: vocalSync.currentBPM()
+            )
+        }
+        refreshDisplay()
     }
 
     private func adjustUserKaraokeOffset(by delta: TimeInterval) {
@@ -1129,7 +1214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         if t.isBuiltIn {
             t = ThemeStore.shared.duplicateTheme(t, newName: "\(t.name) Custom")
         }
-        t.karaokeOffsetSeconds = max(-2.0, min(2.0, t.karaokeOffsetSeconds + delta))
+        t.karaokeOffsetSeconds = max(-2.5, min(2.5, t.karaokeOffsetSeconds + delta))
         ThemeStore.shared.upsertTheme(t, makeActive: true)
         refreshDisplay()
     }
@@ -1153,6 +1238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     @objc private func openThemeEditor() {
         if themeWindowController == nil {
             themeWindowController = ThemeEditorWindowController()
+            themeWindowController?.onRecalibrateSync = { [weak self] in
+                self?.recalibrateAutoSyncNow()
+            }
         }
         themeWindowController?.reloadFromStore()
         NSApp.activate(ignoringOtherApps: true)
