@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200" role="img" aria-label="NotchLyrics Banner Logo">
+  <defs>
+    <linearGradient id="bannerGold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F6DA84"/>
+      <stop offset="100%" stop-color="#D99B26"/>
+    </linearGradient>
+  </defs>
+
+  <!-- OLED Pill Surface -->
+  <rect x="4" y="4" width="752" height="192" rx="34" fill="#000000" stroke="#24242A" stroke-width="3"/>
+
+  <!-- Left Compact Icon Mark -->
+  <rect x="34" y="34" width="132" height="132" rx="32" fill="#0B0B0E" stroke="#2A2A32" stroke-width="2.5"/>
+  <rect x="54" y="54" width="92" height="38" rx="13" fill="#131318" stroke="#303038" stroke-width="2"/>
+  <rect x="64" y="65" width="72" height="7" rx="3.5" fill="#2A2A32"/>
+  <rect x="64" y="65" width="48" height="7" rx="3.5" fill="url(#bannerGold)"/>
+  <circle cx="112" cy="68.5" r="4" fill="#FFF2C6"/>
+  <rect x="76" y="78" width="48" height="4" rx="2" fill="#9E7322"/>
+
+  <!-- Mini EQ Waveform Inside Mark -->
+  <rect x="66" y="121" width="8" height="20" rx="4" fill="#46381A"/>
+  <rect x="81" y="110" width="8" height="38" rx="4" fill="url(#bannerGold)"/>
+  <rect x="96" y="102" width="8" height="48" rx="4" fill="url(#bannerGold)"/>
+  <rect x="111" y="110" width="8" height="38" rx="4" fill="url(#bannerGold)"/>
+  <rect x="126" y="121" width="8" height="20" rx="4" fill="#46381A"/>
+
+  <!-- Crisp Title & Subtitle -->
+  <text x="196" y="92" fill="#F5F5F7" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="44" font-weight="700" letter-spacing="-0.8">NotchLyrics</text>
+  <text x="196" y="130" fill="#A1A1AA" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="500">Synchronized Karaoke for Touch Bar, Notch &amp; Windows</text>
+
+  <!-- Minimal Progress Accent Bar Under Text -->
+  <rect x="196" y="148" width="320" height="4" rx="2" fill="#1F1F24"/>
+  <rect x="196" y="148" width="210" height="4" rx="2" fill="url(#bannerGold)"/>
+</svg>

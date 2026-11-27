@@ -42,9 +42,31 @@ jobs:
           path: .build/*.zip
           include-hidden-files: true
 
+  linux-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: windows/package-lock.json
+      - name: Install dependencies, test & package Linux AppImage/deb targets
+        run: |
+          cd windows
+          npm ci
+          npm test
+          npm run dist:linux
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-linux-packages
+          path: |
+            windows/dist/*.AppImage
+            windows/dist/*.deb
+
   publish-release:
     runs-on: ubuntu-latest
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, linux-package]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v7
@@ -57,3 +79,5 @@ jobs:
           files: |
             release-assets/*.exe
             release-assets/*.zip
+            release-assets/*.AppImage
+            release-assets/*.deb

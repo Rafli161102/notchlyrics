@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>NotchLyrics: Synchronized Karaoke Lyrics for macOS, Windows &amp; Linux</title>
+  <meta name="description" content="Real-time synchronized karaoke lyrics for the macOS Touch Bar, Top-Center Notch, Windows 10/11, Linux MPRIS2 desktop overlay, and Chromium browser extension.">
+  <link rel="canonical" href="https://notchlyrics.mrr.my.id/">
+  <link rel="icon" type="image/svg+xml" href="/assets/notchlyrics-icon.svg">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://notchlyrics.mrr.my.id/">
+  <meta property="og:site_name" content="NotchLyrics">
+  <meta property="og:title" content="NotchLyrics: Synchronized Karaoke Lyrics for macOS, Windows &amp; Linux">
+  <meta property="og:description" content="Pure OLED black karaoke overlay shaped to Golden Ratio proportions, synced via CoreAudio DSP on macOS, WinRT SMTC on Windows, and MPRIS2 on Linux.">
+  <meta property="og:image" content="https://notchlyrics.mrr.my.id/assets/notchlyrics-banner.svg">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NotchLyrics: Synchronized Karaoke Lyrics for macOS, Windows &amp; Linux">
+  <meta name="twitter:description" content="Live word-by-word karaoke lyrics for macOS Touch Bar &amp; Notch, Windows, Linux, and Chrome/Edge/Brave.">
+  <meta name="twitter:image" content="https://notchlyrics.mrr.my.id/assets/notchlyrics-banner.svg">
+
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="NotchLyrics home">
+        <img src="/assets/notchlyrics-icon.svg" alt="" width="32" height="32">
+        <span class="brand-name">NotchLyrics</span>
+        <span class="brand-version">v2.4.0</span>
+      </a>
+
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="site-nav">
+        Menu
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="#preview">Interactive Preview</a>
+        <a href="#capabilities">Architecture</a>
+        <a href="#install">Install Guide</a>
+        <a href="https://github.com/Rafli161102/notchlyrics" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="hero" id="top">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <h1>Live karaoke lyrics in your screen's notch.</h1>
+          <p class="hero-lead">
+            NotchLyrics renders word-by-word synchronized lyrics inside the macOS Touch Bar, the MacBook Top-Center Notch, and transparent always-on-top overlays for Windows 10/11 and Linux.
+          </p>
+
+          <div class="download-panel" aria-labelledby="download-heading">
+            <h2 id="download-heading" class="sr-only">Download NotchLyrics v2.4.0</h2>
+
+            <div class="os-switcher" role="group" aria-label="Select operating system for download">
+              <button type="button" class="os-chip" data-os="macos" aria-pressed="false">macOS</button>
+              <button type="button" class="os-chip" data-os="windows" aria-pressed="false">Windows</button>
+              <button type="button" class="os-chip" data-os="linux" aria-pressed="false">Linux</button>
+            </div>
+
+            <div class="cta-row">
+              <a id="primary-download-btn" class="btn-primary" href="https://github.com/Rafli161102/notchlyrics/releases/latest">
+                Download v2.4.0 on GitHub Releases
+              </a>
+              <a class="btn-secondary" href="#install">
+                Read Setup Steps
+              </a>
+            </div>
+
+            <p id="download-meta" class="download-meta">
+              Detecting your operating system...
+            </p>
+
+            <div id="release-status" class="release-status" aria-live="polite">
+              <span id="release-status-text">Checking GitHub Releases for v2.4.0 assets...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-stage" id="preview" aria-labelledby="preview-heading">
+          <div class="stage-chrome">
+            <div class="stage-header">
+              <h2 id="preview-heading" class="stage-title">Live Notch Simulator</h2>
+              <span class="stage-ratio">1 : 1.618 OLED</span>
+            </div>
+
+            <div class="bezel-canvas">
+              <div id="demo-notch" class="demo-notch style-attached" tabindex="0" aria-label="Interactive NotchLyrics preview">
+                <div class="demo-upper">
+                  <div id="demo-art" class="demo-art" aria-hidden="true">YN</div>
+                  <div class="demo-lyrics">
+                    <p id="demo-main-lyric" class="demo-main-lyric"></p>
+                    <p id="demo-backing-lyric" class="demo-backing-lyric" hidden></p>
+                  </div>
+                </div>
+                <div class="demo-divider" aria-hidden="true"></div>
+                <div class="demo-lower">
+                  <div class="demo-meta">
+                    <p id="demo-track-title" class="demo-track-title"></p>
+                    <p id="demo-artist-album" class="demo-artist-album"></p>
+                  </div>
+                  <span id="demo-timer" class="demo-timer">00:42 / 04:20</span>
+                  <div class="demo-controls">
+                    <button type="button" id="sim-prev" class="sim-btn" aria-label="Previous demo track">&#9664;&#9664;</button>
+                    <button type="button" id="sim-play" class="sim-btn" aria-label="Play demo lyrics">&#9654;</button>
+                    <button type="button" id="sim-next" class="sim-btn" aria-label="Next demo track">&#9654;&#9654;</button>
+                  </div>
+                </div>
+                <div class="demo-progress" aria-hidden="true">
+                  <span id="demo-progress-fill"></span>
+                  <span id="demo-progress-bead"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stage-toolbar">
+              <div class="style-group" role="group" aria-label="Notch display style">
+                <button type="button" class="tool-btn is-active" data-style="attachedBezel" aria-pressed="true">Attached Bezel</button>
+                <button type="button" class="tool-btn" data-style="floatingIsland" aria-pressed="false">Floating Island</button>
+                <button type="button" class="tool-btn" data-style="edgeDockStrip" aria-pressed="false">Edge Strip</button>
+              </div>
+              <div class="action-group">
+                <button type="button" class="tool-btn" id="sim-expand" aria-pressed="false">Expand Card</button>
+                <button type="button" class="tool-btn" id="sim-toggle-play" aria-pressed="false">Play Sweep</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="capabilities" id="capabilities">
+      <div class="container capabilities-grid">
+        <aside class="capabilities-rail">
+          <h2>Built around hardware bezels and vocal timing.</h2>
+          <p>
+            Dark themes lock strictly to pure <code>#000000</code> OLED black so the overlay disappears into physical laptop bezels and Touch Bars, while lyric ink adapts to album artwork with enforced WCAG AA (4.5:1) contrast.
+          </p>
+          <figure class="brand-banner-wrap">
+            <img src="/assets/notchlyrics-banner.svg" alt="NotchLyrics OLED Notch and equalizer mark" width="760" height="200">
+            <figcaption>Golden Ratio geometry (phi = 1.618) across Attached, Floating, and Strip layouts.</figcaption>
+          </figure>
+        </aside>
+
+        <div class="capabilities-list">
+          <article class="cap-band cap-flagship">
+            <div class="cap-tag">Audio &amp; Playback Bridges</div>
+            <h3>Native media hooks on all three desktops</h3>
+            <p>
+              Every desktop target reads playback state directly from the operating system without heavy audio wrappers.
+            </p>
+            <dl class="spec-grid">
+              <div>
+                <dt>macOS 14.2+</dt>
+                <dd>CoreAudio Process Tap lock-free <code>vDSP</code> engine (300-3400 Hz mid/side vocal sync) plus MediaRemoteAdapter and Apple Events fallback for Music, Spotify, and Safari.</dd>
+              </div>
+              <div>
+                <dt>Windows 10 / 11</dt>
+                <dd>Built-in PowerShell WinRT <code>GlobalSystemMediaTransportControls</code> bridge (<code>win_smtc.ps1</code>) with event-driven IPC and 60 FPS <code>rAF</code> sweep.</dd>
+              </div>
+              <div>
+                <dt>Linux (X11 / Wayland)</dt>
+                <dd>Zero-dependency Node.js MPRIS2 watcher (<code>mpris_bridge.js</code>) streaming <code>playerctl --follow</code> events with automatic <code>gdbus</code> and <code>dbus-send</code> polling fallback.</dd>
+              </div>
+              <div>
+                <dt>Chrome / Edge / Brave</dt>
+                <dd>Manifest V3 zero-build extension injecting the Golden Ratio OLED notch onto YouTube, YouTube Music, Spotify Web, SoundCloud, and Apple Music.</dd>
+              </div>
+            </dl>
+          </article>
+
+          <div class="cap-split">
+            <article class="cap-band">
+              <div class="cap-tag">Lyrics Pipeline</div>
+              <h3>Concurrent multi-source racing</h3>
+              <p>
+                Queries LRCLIB, NetEase Cloud Music (word-level YRC and LRC), Kugou, Kuwo, and Lyrics.ovh concurrently, while normalizing Romanized titles through iTunes and Deezer Search APIs.
+              </p>
+            </article>
+
+            <article class="cap-band">
+              <div class="cap-tag">Script &amp; Timing</div>
+              <h3>Multi-script Romaji and fine sync</h3>
+              <p>
+                Handles Japanese particles and sokuon gemination, Korean Hangul Revised Romanization, Mandarin, Cyrillic, and Arabic/Hebrew RTL, paired with per-track Refetch Cache and <code>±0.1s / ±0.5s</code> Manual Offset controls.
+              </p>
+            </article>
+          </div>
+
+          <article class="cap-band cap-compact">
+            <div class="cap-tag">Interface &amp; Languages</div>
+            <div class="cap-inline">
+              <div>
+                <h3>Six live UI languages</h3>
+                <p>Switch tray and Studio settings between English, Bahasa Indonesia, Japanese, Korean, Simplified Chinese, and Spanish without restarting.</p>
+              </div>
+              <div class="cap-pill-list" aria-label="Supported UI languages">
+                <span>English</span>
+                <span>Bahasa Indonesia</span>
+                <span>日本語</span>
+                <span>한국어</span>
+                <span>简体中文</span>
+                <span>Español</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="install-section" id="install">
+      <div class="container">
+        <div class="install-head">
+          <h2>Installation &amp; Platform Notes</h2>
+          <p>Select your platform to view package targets, required permissions, and quick setup commands.</p>
+        </div>
+
+        <div class="tablist" role="tablist" aria-label="Platform installation guides">
+          <button type="button" role="tab" id="tab-macos" aria-controls="panel-macos" aria-selected="true" tabindex="0">macOS</button>
+          <button type="button" role="tab" id="tab-windows" aria-controls="panel-windows" aria-selected="false" tabindex="-1">Windows</button>
+          <button type="button" role="tab" id="tab-linux" aria-controls="panel-linux" aria-selected="false" tabindex="-1">Linux</button>
+          <button type="button" role="tab" id="tab-extension" aria-controls="panel-extension" aria-selected="false" tabindex="-1">Browser Extension</button>
+        </div>
+
+        <div class="tab-panels">
+          <section id="panel-macos" class="tab-panel" role="tabpanel" aria-labelledby="tab-macos">
+            <div class="panel-layout">
+              <div class="panel-main">
+                <h3>macOS 14.2+ (Apple Silicon &amp; Intel)</h3>
+                <p>
+                  Download <code>TouchBarLyrics-2.4.0-macOS.zip</code> from GitHub Releases, extract <code>TouchBarLyrics.app</code>, and drag it into <code>/Applications</code> or <code>~/Applications</code>.
+                </p>
+                <ol class="steps-list">
+                  <li>
+                    <strong>Gatekeeper note:</strong> Local/CI builds use ad-hoc signing by default. If macOS says the app cannot be verified on first launch, right-click <code>TouchBarLyrics.app</code> and choose <strong>Open</strong>, or clear the quarantine attribute in Terminal:
+                  </li>
+                </ol>
+                <div class="code-box">
+                  <pre><code>xattr -cr /Applications/TouchBarLyrics.app</code></pre>
+                  <button type="button" class="copy-btn" data-copy="xattr -cr /Applications/TouchBarLyrics.app">Copy</button>
+                </div>
+                <ol class="steps-list" start="2">
+                  <li>
+                    <strong>System Audio Recording permission:</strong> When prompted, allow System Audio Recording so the lock-free CoreAudio <code>vDSP</code> engine can align vocal timing and pitch lift. Declining still works via timestamp playback.
+                  </li>
+                  <li>
+                    <strong>Build from source:</strong> Run tests and install locally without Xcode using Swift CLI:
+                  </li>
+                </ol>
+                <div class="code-box">
+                  <pre><code>./tests/run.sh &amp;&amp; ./build.sh --install</code></pre>
+                  <button type="button" class="copy-btn" data-copy="./tests/run.sh &amp;&amp; ./build.sh --install">Copy</button>
+                </div>
+              </div>
+              <aside class="panel-aside">
+                <h4>Included Artifacts</h4>
+                <ul>
+                  <li><code>TouchBarLyrics-2.4.0-macOS.zip</code> (Universal <code>arm64</code> + <code>x86_64</code>)</li>
+                </ul>
+                <h4>Supported Modes</h4>
+                <ul>
+                  <li>Touch Bar (<code>DFRFoundation</code> strip)</li>
+                  <li>Top-Center Notch (Attached, Floating, Strip)</li>
+                  <li>Apple Events fallback for Music, Spotify, Safari</li>
+                </ul>
+              </aside>
+            </div>
+          </section>
+
+          <section id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" hidden>
+            <div class="panel-layout">
+              <div class="panel-main">
+                <h3>Windows 10 / 11 (x64 &amp; ARM64)</h3>
+                <p>
+                  Uses built-in PowerShell WinRT <code>GlobalSystemMediaTransportControls</code> (<code>win_smtc.ps1</code>) with zero C++ build tools or external media drivers.
+                </p>
+                <ol class="steps-list">
+                  <li>
+                    <strong>Install or run portable:</strong> Launch <code>NotchLyrics Setup 2.4.0.exe</code> (dual-arch installer) or run the architecture-specific portable executable directly.
+                  </li>
+                  <li>
+                    <strong>System Tray controls:</strong> Right-click the NotchLyrics tray icon to switch Notch styles, toggle Romanization, run <strong>Refetch Lyrics (Clear Cache)</strong>, nudge <strong>Manual Lyrics Offset</strong> (<code>±0.1s / ±0.5s</code>), or change UI language.
+                  </li>
+                  <li>
+                    <strong>Run or build from source:</strong>
+                  </li>
+                </ol>
+                <div class="code-box">
+                  <pre><code>cd windows &amp;&amp; npm install &amp;&amp; npm test &amp;&amp; npm start</code></pre>
+                  <button type="button" class="copy-btn" data-copy="cd windows &amp;&amp; npm install &amp;&amp; npm test &amp;&amp; npm start">Copy</button>
+                </div>
+              </div>
+              <aside class="panel-aside">
+                <h4>Included Artifacts</h4>
+                <ul>
+                  <li><code>NotchLyrics Setup 2.4.0.exe</code> (<code>x64</code> + <code>ARM64</code>)</li>
+                  <li><code>NotchLyrics-2.4.0-x64-portable.exe</code></li>
+                  <li><code>NotchLyrics-2.4.0-arm64-portable.exe</code></li>
+                </ul>
+                <h4>Compatible Players</h4>
+                <ul>
+                  <li>Spotify, Apple Music, Tidal, VLC</li>
+                  <li>Chrome, Edge, Brave, Firefox, YouTube Music PWA</li>
+                </ul>
+              </aside>
+            </div>
+          </section>
+
+          <section id="panel-linux" class="tab-panel" role="tabpanel" aria-labelledby="tab-linux" hidden>
+            <div class="panel-layout">
+              <div class="panel-main">
+                <h3>Linux Desktop (X11 &amp; Wayland, x64)</h3>
+                <p>
+                  NotchLyrics listens to <code>org.mpris.MediaPlayer2.*</code> via <code>playerctl --follow</code> and falls back automatically to <code>gdbus</code> or <code>dbus-send</code> polling if <code>playerctl</code> is absent.
+                </p>
+                <ol class="steps-list">
+                  <li>
+                    <strong>Install playerctl (recommended for lowest CPU):</strong>
+                  </li>
+                </ol>
+                <div class="code-box">
+                  <pre><code># Debian / Ubuntu / Mint
+sudo apt update &amp;&amp; sudo apt install playerctl
+
+# Arch / Manjaro
+sudo pacman -S playerctl
+
+# Fedora
+sudo dnf install playerctl</code></pre>
+                  <button type="button" class="copy-btn" data-copy="sudo apt update &amp;&amp; sudo apt install playerctl">Copy apt</button>
+                </div>
+                <ol class="steps-list" start="2">
+                  <li>
+                    <strong>Run AppImage or install .deb package:</strong>
+                  </li>
+                </ol>
+                <div class="code-box">
+                  <pre><code>chmod +x NotchLyrics-2.4.0.AppImage &amp;&amp; ./NotchLyrics-2.4.0.AppImage
+# or on Debian / Ubuntu:
+sudo apt install ./notchlyrics-windows_2.4.0_amd64.deb</code></pre>
+                  <button type="button" class="copy-btn" data-copy="chmod +x NotchLyrics-2.4.0.AppImage &amp;&amp; ./NotchLyrics-2.4.0.AppImage">Copy</button>
+                </div>
+              </div>
+              <aside class="panel-aside">
+                <h4>Included Artifacts</h4>
+                <ul>
+                  <li><code>.AppImage</code> (<code>x64</code> portable bundle)</li>
+                  <li><code>.deb</code> (Debian / Ubuntu <code>amd64</code>)</li>
+                </ul>
+                <h4>Local Packaging</h4>
+                <ul>
+                  <li><code>cd windows &amp;&amp; npm run dist:linux</code></li>
+                  <li>Settings &amp; cache stored in <code>~/.config/NotchLyrics</code></li>
+                </ul>
+              </aside>
+            </div>
+          </section>
+
+          <section id="panel-extension" class="tab-panel" role="tabpanel" aria-labelledby="tab-extension" hidden>
+            <div class="panel-layout">
+              <div class="panel-main">
+                <h3>Zero-Build Browser Extension (Chrome / Edge / Brave)</h3>
+                <p>
+                  Run the Golden Ratio OLED Notch directly inside Chromium-based browsers with no Node.js runtime or desktop installer required.
+                </p>
+                <ol class="steps-list">
+                  <li>Clone or download the repository and locate <code>windows/browser-extension</code>.</li>
+                  <li>Open <code>chrome://extensions</code> (or <code>edge://extensions</code> / <code>brave://extensions</code>).</li>
+                  <li>Enable <strong>Developer mode</strong> in the top-right corner.</li>
+                  <li>Click <strong>Load unpacked</strong> and select the <code>windows/browser-extension</code> directory.</li>
+                </ol>
+              </div>
+              <aside class="panel-aside">
+                <h4>Supported Web Players</h4>
+                <ul>
+                  <li>YouTube (<code>youtube.com</code>)</li>
+                  <li>YouTube Music (<code>music.youtube.com</code>)</li>
+                  <li>Spotify Web (<code>open.spotify.com</code>)</li>
+                  <li>SoundCloud &amp; Apple Music Web</li>
+                </ul>
+              </aside>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="/assets/notchlyrics-icon.svg" alt="" width="24" height="24">
+        <span>NotchLyrics v2.4.0</span>
+        <span class="footer-sep" aria-hidden="true">/</span>
+        <span>MIT License</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/Rafli161102/notchlyrics/releases/latest" target="_blank" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/Rafli161102/notchlyrics/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a>
+        <a href="https://github.com/Rafli161102/notchlyrics" target="_blank" rel="noopener noreferrer">Source Code</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

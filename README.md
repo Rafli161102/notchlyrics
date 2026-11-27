@@ -5,9 +5,12 @@
 # NotchLyrics
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Platform: macOS 14.2+ | Windows 10/11](https://img.shields.io/badge/Platform-macOS%2014.2%2B%20%7C%20Windows%2010%2F11-black)
+![Platform: macOS 14.2+ | Windows 10/11 | Linux](https://img.shields.io/badge/Platform-macOS%2014.2%2B%20%7C%20Windows%2010%2F11%20%7C%20Linux-black)
+[![Website](https://img.shields.io/badge/Website-notchlyrics.mrr.my.id-F4D06F)](https://notchlyrics.mrr.my.id)
 
-Real-time synchronized karaoke lyrics for the **macOS Touch Bar**, **macOS Top-Center Notch Overlay**, **Windows 10/11 Desktop Notch Overlay**, and **Chromium/Edge/Brave Browser Extension**.
+Official Website & Downloads: **[https://notchlyrics.mrr.my.id](https://notchlyrics.mrr.my.id)**
+
+Real-time synchronized karaoke lyrics for the **macOS Touch Bar**, **macOS Top-Center Notch Overlay**, **Windows 10/11 Desktop Notch Overlay**, **Linux Desktop (MPRIS2)**, and **Chromium/Edge/Brave Browser Extension**.
 
 Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure OLED `#000000` black surfaces**, **album-matched adaptive text colors**, **multi-line zero-truncation Notch rendering**, and **real-time vocal intonation & BPM audio auto-sync**.
 
@@ -18,7 +21,8 @@ Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure O
 ### Cross-Platform Outputs
 - **macOS Touch Bar (`macOS 14.2+`)**: Native `NSTouchBar` system tray item & live interactive karaoke strip (`DFRFoundation`), zero Xcode project required.
 - **macOS Top-Center Notch (`macOS 14.2+`)**: Transparent always-on-top `NSPanel` visible across all Spaces and full-screen apps with zero focus stealing. Automatically adapts to **Attached Bezel**, **Floating Dynamic Island**, or **Wide Edge Dock Strip**, and automatically selects Notch mode on Apple Silicon / notched MacBooks without a Touch Bar.
-- **Windows 10 / 11 Desktop App (`windows/`)**: Frameless, transparent always-on-top Electron overlay powered by built-in Windows WinRT `GlobalSystemMediaTransportControls` (`win_smtc.ps1`), reading Spotify, YouTube Music, Chrome, Edge, Brave, Firefox, Apple Music, and VLC system-wide without extra native drivers.
+- **Windows 10 / 11 Desktop App (`windows/`)**: Frameless, transparent always-on-top Electron overlay powered by event-driven IPC + `rAF` 60 FPS sweep and built-in Windows WinRT `GlobalSystemMediaTransportControls` (`win_smtc.ps1`), reading Spotify, YouTube Music, Chrome, Edge, Brave, Firefox, Apple Music, and VLC system-wide without extra native drivers.
+- **Linux Desktop App (`windows/mpris_bridge.js`)**: Frameless transparent X11/Wayland Electron overlay with zero external runtime dependencies, reading `org.mpris.MediaPlayer2.*` via `playerctl --follow` (with automatic `gdbus` / `dbus-send` fallback) across Spotify, Chrome, Firefox, VLC, Rhythmbox, and mpv.
 - **Zero-Build Browser Extension (`windows/browser-extension/`)**: Manifest V3 extension for Chrome, Edge, and Brave adding an OLED Golden Ratio lyrics notch on YouTube, YouTube Music, Spotify Web, SoundCloud, and Apple Music.
 
 ### Real-Time Lyrics & Vocal Synchronization
@@ -61,19 +65,21 @@ Designed around **Golden Ratio ($\varphi \approx 1.618$) proportions**, **pure O
 ├── .github/workflows/               # Cross-platform CI build & tagged release automation
 ├── tests/                           # Standalone macOS Swift test suites
 ├── assets/                          # Vector SVG app icon & GitHub banner assets
-├── windows/                         # Windows 10/11 Electron app, WinRT SMTC & MV3 extension
+├── site/                            # Vercel-ready landing & download website (notchlyrics.mrr.my.id)
+├── windows/                         # Windows & Linux Electron app, WinRT SMTC, MPRIS2 & MV3 extension
 └── web/                             # Reusable standalone browser notch UI
 ```
 
 ---
 
-## Prebuilt Releases (macOS & Windows)
+## Prebuilt Releases (macOS, Windows & Linux)
 
-Ready-to-use binaries are published on the [**GitHub Releases**](https://github.com/Rafli161102/notchlyrics/releases) page (built automatically by [.github/workflows/release.yml](.github/workflows/release.yml) on every `v*` tag):
+Download the latest release directly from **[notchlyrics.mrr.my.id](https://notchlyrics.mrr.my.id)** or the [**GitHub Releases**](https://github.com/Rafli161102/notchlyrics/releases) page (built automatically by [.github/workflows/release.yml](.github/workflows/release.yml) on every `v*` tag):
 
-- **macOS (`14.2+` Universal `arm64` + `x86_64`):** `TouchBarLyrics-2.3.0-macOS.zip`
-- **Windows (`10 / 11` Installer `x64` + `ARM64`):** `NotchLyrics Setup 2.3.0.exe`
-- **Windows Portable:** `NotchLyrics-2.3.0-x64-portable.exe` (`x64`), `NotchLyrics-2.3.0-arm64-portable.exe` (`ARM64`), and `NotchLyrics-2.3.0-portable.exe` (dual-arch)
+- **macOS (`14.2+` Universal `arm64` + `x86_64`):** `TouchBarLyrics-2.4.0-macOS.zip`
+- **Windows (`10 / 11` Installer `x64` + `ARM64`):** `NotchLyrics Setup 2.4.0.exe`
+- **Windows Portable:** `NotchLyrics-2.4.0-x64-portable.exe` (`x64`), `NotchLyrics-2.4.0-arm64-portable.exe` (`ARM64`), and `NotchLyrics-2.4.0-portable.exe` (dual-arch)
+- **Linux (`x64`):** `.AppImage` and `.deb` packages
 
 ---
 
@@ -125,10 +131,47 @@ Package Windows installers & portable executables (`x64` and `ARM64`) inside `wi
 npm run dist:win
 ```
 This outputs:
-- `NotchLyrics Setup 2.3.0.exe` (dual-arch NSIS installer for `x64` + `ARM64`)
-- `NotchLyrics-2.3.0-x64-portable.exe` (`x64` portable)
-- `NotchLyrics-2.3.0-arm64-portable.exe` (`ARM64` portable)
-- `NotchLyrics-2.3.0-portable.exe` (dual-arch portable)
+- `NotchLyrics Setup 2.4.0.exe` (dual-arch NSIS installer for `x64` + `ARM64`)
+- `NotchLyrics-2.4.0-x64-portable.exe` (`x64` portable)
+- `NotchLyrics-2.4.0-arm64-portable.exe` (`ARM64` portable)
+- `NotchLyrics-2.4.0-portable.exe` (dual-arch portable)
+
+### Linux (`X11 / Wayland`)
+
+#### Recommended Dependency (`playerctl`)
+NotchLyrics uses `playerctl --follow` for low-overhead event-driven MPRIS2 tracking (falling back automatically to `gdbus` / `dbus-send` polling if `playerctl` is absent):
+```sh
+# Debian / Ubuntu / Pop!_OS / Linux Mint
+sudo apt update && sudo apt install playerctl
+
+# Arch Linux / Manjaro
+sudo pacman -S playerctl
+
+# Fedora
+sudo dnf install playerctl
+```
+
+#### Install from Release Artifacts (`.AppImage` / `.deb`)
+```sh
+# AppImage
+chmod +x NotchLyrics-2.4.0.AppImage
+./NotchLyrics-2.4.0.AppImage
+
+# Debian / Ubuntu (.deb)
+sudo apt install ./notchlyrics-windows_2.4.0_amd64.deb
+```
+
+#### Run or Package from Source
+Requires [Node.js](https://nodejs.org/) 20+ (tested on Node 24):
+```sh
+cd windows
+npm install
+npm test
+npm start
+
+# Package .AppImage & .deb (x64)
+npm run dist:linux
+```
 
 #### Option 2: Zero-Build Chrome / Edge / Brave Extension (`windows/browser-extension/`)
 1. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`).

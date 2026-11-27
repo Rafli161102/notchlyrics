@@ -18,6 +18,14 @@ const TRANSLATIONS = {
     'zh-Hans': 'NotchLyrics Windows 版',
     es: 'NotchLyrics para Windows'
   },
+  appHeaderLinux: {
+    en: 'NotchLyrics for Linux',
+    id: 'NotchLyrics untuk Linux',
+    ja: 'NotchLyrics Linux版',
+    ko: 'Linux용 NotchLyrics',
+    'zh-Hans': 'NotchLyrics Linux 版',
+    es: 'NotchLyrics para Linux'
+  },
   idleStatus: {
     en: 'Play music in Chrome, Edge, Spotify, or Apple Music',
     id: 'Putar musik di Chrome, Edge, Spotify, atau Apple Music',
@@ -25,6 +33,14 @@ const TRANSLATIONS = {
     ko: 'Chrome, Edge, Spotify 또는 Apple Music에서 음악을 재생하세요',
     'zh-Hans': '请在 Chrome、Edge、Spotify 或 Apple Music 中播放音乐',
     es: 'Reproduce música en Chrome, Edge, Spotify o Apple Music'
+  },
+  idleStatusLinux: {
+    en: 'Play music in Spotify, Chrome, Firefox, or VLC (MPRIS2)',
+    id: 'Putar musik di Spotify, Chrome, Firefox, atau VLC (MPRIS2)',
+    ja: 'Spotify・Chrome・Firefox・VLC で再生してください (MPRIS2)',
+    ko: 'Spotify, Chrome, Firefox 또는 VLC에서 음악을 재생하세요 (MPRIS2)',
+    'zh-Hans': '请在 Spotify、Chrome、Firefox 或 VLC 中播放音乐 (MPRIS2)',
+    es: 'Reproduce música en Spotify, Chrome, Firefox o VLC (MPRIS2)'
   },
   searchingLyrics: {
     en: 'Searching lyrics:',
@@ -145,6 +161,14 @@ const TRANSLATIONS = {
     ko: 'Windows 10/11용 실시간 동기화 가라오케 가사 오버레이 (OLED 노치 + WinRT SMTC).\n\n가사 출처: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\n라이선스: MIT License\n저장소: github.com/Rafli161102/notchlyrics',
     'zh-Hans': '面向 Windows 10/11 的实时同步卡拉OK歌词悬浮窗 (OLED 刘海屏 + WinRT SMTC)。\n\n歌词来源: LRCLIB、网易云 (YRC/LRC)、酷狗、酷我、Deezer、iTunes\n开源协议: MIT License\n代码仓库: github.com/Rafli161102/notchlyrics',
     es: 'Letras de karaoke sincronizadas en tiempo real para Windows 10/11 (Notch OLED + WinRT SMTC).\n\nFuentes: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLicencia: MIT License\nRepositorio: github.com/Rafli161102/notchlyrics'
+  },
+  aboutDetailLinux: {
+    en: 'Real-time synchronized karaoke lyrics for Linux (Golden Ratio OLED Notch + MPRIS2).\n\nSources: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLicense: MIT License\nRepository: github.com/Rafli161102/notchlyrics',
+    id: 'Lirik karaoke tersinkronisasi real-time untuk Linux (Golden Ratio OLED Notch + MPRIS2).\n\nSumber: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLisensi: MIT License\nRepositori: github.com/Rafli161102/notchlyrics',
+    ja: 'Linux 向けのリアルタイム同期カラオケ歌詞オーバーレイ (OLED ノッチ + MPRIS2)。\n\n歌詞ソース: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nライセンス: MIT License\nリポジトリ: github.com/Rafli161102/notchlyrics',
+    ko: 'Linux용 실시간 동기화 가라오케 가사 오버레이 (OLED 노치 + MPRIS2).\n\n가사 출처: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\n라이선스: MIT License\n저장소: github.com/Rafli161102/notchlyrics',
+    'zh-Hans': '面向 Linux 的实时同步卡拉OK歌词悬浮窗 (OLED 刘海屏 + MPRIS2)。\n\n歌词来源: LRCLIB、网易云 (YRC/LRC)、酷狗、酷我、Deezer、iTunes\n开源协议: MIT License\n代码仓库: github.com/Rafli161102/notchlyrics',
+    es: 'Letras de karaoke sincronizadas en tiempo real para Linux (Notch OLED + MPRIS2).\n\nFuentes: LRCLIB, NetEase (YRC/LRC), Kugou, Kuwo, Deezer, iTunes\nLicencia: MIT License\nRepositorio: github.com/Rafli161102/notchlyrics'
   },
   aboutOpenReleases: {
     en: 'GitHub Releases',
