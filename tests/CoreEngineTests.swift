@@ -495,6 +495,95 @@ enum CoreEngineTests {
             UserDefaults.standard.removeObject(forKey: "appLanguage")
         }
 
+        // BG Vocal Touch Bar 30pt bounds + per-pixel spacing + expanded fonts & animations
+        let bgView = TouchBarLyricsView {}
+        bgView.frame = NSRect(x: 0, y: 0, width: 640, height: 30)
+        var compactGapTheme = TouchBarTheme.builtInThemes[0]
+        compactGapTheme.mainFontSize = 11.5
+        compactGapTheme.backingFontSize = 9.0
+        compactGapTheme.backingSpacing = -2.0
+        compactGapTheme.backingPlacement = .below
+        compactGapTheme.progressPosition = .bottom
+        compactGapTheme.customFontName = "Avenir Next"
+        bgView.applyTheme(compactGapTheme)
+        bgView.update(
+            trackTitle: "Test",
+            mainText: "Playing with joy",
+            backingText: "keeping every rhythm",
+            songProgress: 0.4,
+            lineProgress: 0.5,
+            backingLineProgress: 0.5,
+            vocalEnergy: 0.6,
+            backingVocalEnergy: 0.5,
+            isPlaying: true,
+            isVocalSynced: false
+        )
+        bgView.layoutSubtreeIfNeeded()
+        let cFrame = bgView.lyricContainerFrameForTesting
+        let mTight = bgView.mainLabelFrameForTesting
+        let bTight = bgView.backingLabelFrameForTesting
+        check(bTight.minY >= 0 && bTight.maxY <= cFrame.height, "backing vocal fits vertically inside Touch Bar without bottom clipping (y=\(bTight.minY), h=\(bTight.height), containerH=\(cFrame.height))")
+        check(mTight.maxY <= cFrame.height && mTight.minY >= 0, "main vocal stays within Touch Bar container bounds")
+
+        compactGapTheme.mainFontSize = 14.5
+        compactGapTheme.backingFontSize = 11.5
+        compactGapTheme.backingSpacing = 4.0
+        bgView.applyTheme(compactGapTheme)
+        bgView.update(
+            trackTitle: "Test",
+            mainText: "Playing with joy",
+            backingText: "keeping every rhythm",
+            songProgress: 0.4,
+            lineProgress: 0.5,
+            backingLineProgress: 0.5,
+            vocalEnergy: 0.6,
+            backingVocalEnergy: 0.5,
+            isPlaying: true,
+            isVocalSynced: false
+        )
+        bgView.layoutSubtreeIfNeeded()
+        let mWide = bgView.mainLabelFrameForTesting
+        let bWide = bgView.backingLabelFrameForTesting
+        let gapTight = mTight.minY - bTight.maxY
+        let gapWide = mWide.minY - bWide.maxY
+        check(gapWide > gapTight, "backingSpacing adjusts pixel gap between main and backing vocals (\(gapTight) -> \(gapWide))")
+        check(bWide.minY >= 0 && mWide.maxY <= cFrame.height, "expanded spacing preserves non-clipping Touch Bar frames")
+
+        // Expanded fonts + customFontName resolution + Codable persistence
+        for fStyle in ThemeFontStyle.allCases {
+            var ft = TouchBarTheme.builtInThemes[0]
+            ft.fontStyle = fStyle
+            let f = ft.resolvedFont(size: 12, weight: .semibold)
+            check(f.pointSize == 12, "ThemeFontStyle.\(fStyle.rawValue) resolves cleanly")
+        }
+        let encodedData = try! JSONEncoder().encode(compactGapTheme)
+        let decodedTheme = try! JSONDecoder().decode(TouchBarTheme.self, from: encodedData)
+        check(decodedTheme.backingSpacing == 4.0 && decodedTheme.customFontName == "Avenir Next", "TouchBarTheme persists backingSpacing & customFontName")
+        let customFont = decodedTheme.resolvedFont(size: 13, weight: .bold)
+        check(customFont.familyName?.contains("Avenir") == true, "customFontName resolves system font family (\(customFont.familyName ?? "nil"))")
+
+        // All 11 word animations & 9 line transitions execute cleanly
+        for wAnim in ThemeWordAnimation.allCases {
+            var wt = compactGapTheme
+            wt.wordAnimation = wAnim
+            bgView.applyTheme(wt)
+            bgView.update(
+                trackTitle: "Anim",
+                mainText: "Dancing in the spotlight",
+                backingText: "spotlight glow",
+                songProgress: 0.5,
+                lineProgress: 0.55,
+                backingLineProgress: 0.55,
+                vocalEnergy: 0.8,
+                backingVocalEnergy: 0.6,
+                vocalIntonation: 0.7,
+                vocalOnset: 0.5,
+                isPlaying: true,
+                isVocalSynced: true
+            )
+            check(bgView.renderedMainAttributedString.length > 0, "ThemeWordAnimation.\(wAnim.rawValue) renders attributed string")
+        }
+
         if failures > 0 {
             print("\(failures) failing core test(s)")
             exit(1)

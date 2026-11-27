@@ -89,6 +89,34 @@ enum L10n {
             .english: "Monospace", .indonesian: "Monospace", .japanese: "等幅フォント",
             .korean: "고정폭", .chineseSimplified: "等宽字体", .spanish: "Monoespaciada"
         ],
+        "font.avenir": [
+            .english: "Avenir Next", .indonesian: "Avenir Next", .japanese: "Avenir Next",
+            .korean: "Avenir Next", .chineseSimplified: "Avenir Next", .spanish: "Avenir Next"
+        ],
+        "font.futura": [
+            .english: "Futura (Geometric)", .indonesian: "Futura (Geometris)", .japanese: "Futura (ジオメトリック)",
+            .korean: "Futura (기하학체)", .chineseSimplified: "Futura (几何体)", .spanish: "Futura (Geométrica)"
+        ],
+        "font.gillSans": [
+            .english: "Gill Sans", .indonesian: "Gill Sans", .japanese: "Gill Sans",
+            .korean: "Gill Sans", .chineseSimplified: "Gill Sans", .spanish: "Gill Sans"
+        ],
+        "font.georgia": [
+            .english: "Georgia (Serif)", .indonesian: "Georgia (Serif)", .japanese: "Georgia (セリフ)",
+            .korean: "Georgia (세리프)", .chineseSimplified: "Georgia (经典衬线)", .spanish: "Georgia (Serif)"
+        ],
+        "font.helvetica": [
+            .english: "Helvetica Neue", .indonesian: "Helvetica Neue", .japanese: "Helvetica Neue",
+            .korean: "Helvetica Neue", .chineseSimplified: "Helvetica Neue", .spanish: "Helvetica Neue"
+        ],
+        "font.hiragino": [
+            .english: "Hiragino Sans (Clean)", .indonesian: "Hiragino Sans (Bersih)", .japanese: "ヒラギノ角ゴ (CJK)",
+            .korean: "히라기노 고딕", .chineseSimplified: "冬青黑体 (Hiragino)", .spanish: "Hiragino Sans"
+        ],
+        "font.markerFelt": [
+            .english: "Marker Felt (Playful)", .indonesian: "Marker Felt (Santai)", .japanese: "Marker Felt (手書き風)",
+            .korean: "Marker Felt (손글씨)", .chineseSimplified: "Marker Felt (手写风)", .spanish: "Marker Felt"
+        ],
 
         // Layout Modes
         "layout.standard": [
@@ -203,6 +231,18 @@ enum L10n {
             .english: "Instant (No Transition)", .indonesian: "Instan (Tanpa Transisi)", .japanese: "即時切替 (なし)",
             .korean: "즉시 전환 (없음)", .chineseSimplified: "即时切换 (无动画)", .spanish: "Instantáneo (Sin Transición)"
         ],
+        "trans.slideRight": [
+            .english: "Slide Right", .indonesian: "Geser ke Kanan", .japanese: "右へスライド",
+            .korean: "오른쪽으로 슬라이드", .chineseSimplified: "向右滑入", .spanish: "Deslizar Derecha"
+        ],
+        "trans.scaleFade": [
+            .english: "Cinematic Bloom", .indonesian: "Mekar Sinematik", .japanese: "シネマティックブルーム",
+            .korean: "시네마틱 블룸", .chineseSimplified: "电影感绽放", .spanish: "Brote Cinemático"
+        ],
+        "trans.elasticBounce": [
+            .english: "Elastic Spring", .indonesian: "Pantul Elastis", .japanese: "エラスティックスプリング",
+            .korean: "탄성 스프링", .chineseSimplified: "弹性回弹", .spanish: "Rebote Elástico"
+        ],
 
         // Word Animations
         "word.karaokeLift": [
@@ -220,6 +260,30 @@ enum L10n {
         "word.glowPulse": [
             .english: "Reactive Bold Glow", .indonesian: "Sorot Tebal Reaktif", .japanese: "ダイナミック太字発光",
             .korean: "반응형 볼드 글로우", .chineseSimplified: "动态加粗高亮", .spanish: "Brillo Reactivo"
+        ],
+        "word.waveRipple": [
+            .english: "Wave Ripple (Flowing)", .indonesian: "Ombak Mengalir (Wave)", .japanese: "ウェーブリップル (波紋)",
+            .korean: "웨이브 리플 (물결)", .chineseSimplified: "波浪律动", .spanish: "Onda Fluida"
+        ],
+        "word.springPop": [
+            .english: "Spring Pop (Bouncy)", .indonesian: "Pop Pegas (Membal)", .japanese: "スプリングポップ",
+            .korean: "스프링 팝 (통통 튀기)", .chineseSimplified: "弹簧跃起", .spanish: "Salto Elástico"
+        ],
+        "word.spotlightGlow": [
+            .english: "Stage Spotlight Glow", .indonesian: "Sorot Panggung (Spotlight)", .japanese: "スポットライト発光",
+            .korean: "스테이지 스포트라이트", .chineseSimplified: "舞台聚光灯", .spanish: "Foco Escénico"
+        ],
+        "word.neonBounce": [
+            .english: "Neon Pulse + Bounce", .indonesian: "Denyut Neon + Pantul", .japanese: "ネオンパルスバウンス",
+            .korean: "네온 펄스 바운스", .chineseSimplified: "霓虹脉动", .spanish: "Pulso Neón"
+        ],
+        "word.elasticScale": [
+            .english: "Elastic Beat Zoom", .indonesian: "Zoom Ketukan Elastis", .japanese: "エラスティックズーム",
+            .korean: "일래스틱 비트 줌", .chineseSimplified: "节拍弹性放大", .spanish: "Zoom Rítmico"
+        ],
+        "word.letterDrop": [
+            .english: "Cascade Drop Reveal", .indonesian: "Jatuh Beruntun (Drop)", .japanese: "カスケードドロップ",
+            .korean: "캐스케이드 드롭", .chineseSimplified: "逐字瀑布落入", .spanish: "Cascada Descendente"
         ],
         "word.solid": [
             .english: "Static Solid", .indonesian: "Statis Penuh", .japanese: "固定表示",
@@ -636,6 +700,18 @@ enum L10n {
         "studio.label.font": [
             .english: "Font Family", .indonesian: "Jenis Font", .japanese: "フォント種類",
             .korean: "글꼴", .chineseSimplified: "字体样式", .spanish: "Tipografía"
+        ],
+        "studio.label.customFont": [
+            .english: "System Font Override", .indonesian: "Font Bebas Sistem", .japanese: "システムフォント選択",
+            .korean: "시스템 글꼴 선택", .chineseSimplified: "自由系统字体", .spanish: "Fuente del Sistema"
+        ],
+        "studio.font.presetDefault": [
+            .english: "(Use Style Preset)", .indonesian: "(Ikuti Gaya Font)", .japanese: "(スタイル設定を使用)",
+            .korean: "(스타일 프리셋 사용)", .chineseSimplified: "(跟随预设风格)", .spanish: "(Usar Estilo Predefinido)"
+        ],
+        "studio.label.backingSpacing": [
+            .english: "Main-BG Gap (px)", .indonesian: "Jarak Main-BG (px)", .japanese: "メイン-コーラス間隔(px)",
+            .korean: "메인-백 보컬 간격(px)", .chineseSimplified: "主唱和声间距(px)", .spanish: "Separación Voz-Coros(px)"
         ],
         "studio.label.mainSize": [
             .english: "Lead Vocal Size", .indonesian: "Ukuran Main Vocal", .japanese: "メイン歌詞サイズ",

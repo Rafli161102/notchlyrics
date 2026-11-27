@@ -5,6 +5,13 @@ enum ThemeFontStyle: String, Codable, CaseIterable {
     case rounded = "rounded"
     case serif = "serif"
     case mono = "mono"
+    case avenir = "avenir"
+    case futura = "futura"
+    case gillSans = "gillSans"
+    case georgia = "georgia"
+    case helvetica = "helvetica"
+    case hiragino = "hiragino"
+    case markerFelt = "markerFelt"
 
     var displayName: String {
         switch self {
@@ -12,6 +19,13 @@ enum ThemeFontStyle: String, Codable, CaseIterable {
         case .rounded: return L10n.tr("font.rounded")
         case .serif: return L10n.tr("font.serif")
         case .mono: return L10n.tr("font.mono")
+        case .avenir: return L10n.tr("font.avenir")
+        case .futura: return L10n.tr("font.futura")
+        case .gillSans: return L10n.tr("font.gillSans")
+        case .georgia: return L10n.tr("font.georgia")
+        case .helvetica: return L10n.tr("font.helvetica")
+        case .hiragino: return L10n.tr("font.hiragino")
+        case .markerFelt: return L10n.tr("font.markerFelt")
         }
     }
 
@@ -35,6 +49,27 @@ enum ThemeFontStyle: String, Codable, CaseIterable {
             return base
         case .mono:
             return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case .avenir:
+            return TouchBarTheme.resolveSystemFont(family: "Avenir Next", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .futura:
+            return TouchBarTheme.resolveSystemFont(family: "Futura", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .gillSans:
+            return TouchBarTheme.resolveSystemFont(family: "Gill Sans", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .georgia:
+            return TouchBarTheme.resolveSystemFont(family: "Georgia", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .helvetica:
+            return TouchBarTheme.resolveSystemFont(family: "Helvetica Neue", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .hiragino:
+            return TouchBarTheme.resolveSystemFont(family: "Hiragino Sans", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
+        case .markerFelt:
+            return TouchBarTheme.resolveSystemFont(family: "Marker Felt", size: size, weight: weight)
+                ?? NSFont.systemFont(ofSize: size, weight: weight)
         }
     }
 }
@@ -137,8 +172,11 @@ enum ThemeLineTransition: String, Codable, CaseIterable {
     case pushUp = "pushUp"
     case pushDown = "pushDown"
     case slideLeft = "slideLeft"
+    case slideRight = "slideRight"
     case crossfade = "crossfade"
     case zoomSoft = "zoomSoft"
+    case scaleFade = "scaleFade"
+    case elasticBounce = "elasticBounce"
     case none = "none"
 
     var displayName: String {
@@ -146,8 +184,11 @@ enum ThemeLineTransition: String, Codable, CaseIterable {
         case .pushUp: return L10n.tr("trans.pushUp")
         case .pushDown: return L10n.tr("trans.pushDown")
         case .slideLeft: return L10n.tr("trans.slideLeft")
+        case .slideRight: return L10n.tr("trans.slideRight")
         case .crossfade: return L10n.tr("trans.crossfade")
         case .zoomSoft: return L10n.tr("trans.zoomSoft")
+        case .scaleFade: return L10n.tr("trans.scaleFade")
+        case .elasticBounce: return L10n.tr("trans.elasticBounce")
         case .none: return L10n.tr("trans.none")
         }
     }
@@ -158,6 +199,12 @@ enum ThemeWordAnimation: String, Codable, CaseIterable {
     case smoothWipe = "smoothWipe"
     case typewriter = "typewriter"
     case glowPulse = "glowPulse"
+    case waveRipple = "waveRipple"
+    case springPop = "springPop"
+    case spotlightGlow = "spotlightGlow"
+    case neonBounce = "neonBounce"
+    case elasticScale = "elasticScale"
+    case letterDrop = "letterDrop"
     case solid = "solid"
 
     var displayName: String {
@@ -166,6 +213,12 @@ enum ThemeWordAnimation: String, Codable, CaseIterable {
         case .smoothWipe: return L10n.tr("word.smoothWipe")
         case .typewriter: return L10n.tr("word.typewriter")
         case .glowPulse: return L10n.tr("word.glowPulse")
+        case .waveRipple: return L10n.tr("word.waveRipple")
+        case .springPop: return L10n.tr("word.springPop")
+        case .spotlightGlow: return L10n.tr("word.spotlightGlow")
+        case .neonBounce: return L10n.tr("word.neonBounce")
+        case .elasticScale: return L10n.tr("word.elasticScale")
+        case .letterDrop: return L10n.tr("word.letterDrop")
         case .solid: return L10n.tr("word.solid")
         }
     }
@@ -244,6 +297,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
     var eqStyle: ThemeEQStyle
     var mainFontSize: CGFloat
     var backingFontSize: CGFloat
+    var backingSpacing: CGFloat
+    var customFontName: String
     var horizontalPadding: CGFloat
     var lineTransition: ThemeLineTransition
     var wordAnimation: ThemeWordAnimation
@@ -282,6 +337,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         eqStyle: ThemeEQStyle = .bars,
         mainFontSize: CGFloat = 13.0,
         backingFontSize: CGFloat = 10.0,
+        backingSpacing: CGFloat = 1.0,
+        customFontName: String = "",
         horizontalPadding: CGFloat = 8.0,
         lineTransition: ThemeLineTransition = .pushUp,
         wordAnimation: ThemeWordAnimation = .karaokeLift,
@@ -319,6 +376,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         self.eqStyle = eqStyle
         self.mainFontSize = mainFontSize
         self.backingFontSize = backingFontSize
+        self.backingSpacing = backingSpacing
+        self.customFontName = customFontName
         self.horizontalPadding = horizontalPadding
         self.lineTransition = lineTransition
         self.wordAnimation = wordAnimation
@@ -362,6 +421,8 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         eqStyle = try c.decodeIfPresent(ThemeEQStyle.self, forKey: .eqStyle) ?? .bars
         mainFontSize = try c.decodeIfPresent(CGFloat.self, forKey: .mainFontSize) ?? 13.0
         backingFontSize = try c.decodeIfPresent(CGFloat.self, forKey: .backingFontSize) ?? 10.0
+        backingSpacing = try c.decodeIfPresent(CGFloat.self, forKey: .backingSpacing) ?? 1.0
+        customFontName = try c.decodeIfPresent(String.self, forKey: .customFontName) ?? ""
         horizontalPadding = try c.decodeIfPresent(CGFloat.self, forKey: .horizontalPadding) ?? 8.0
         lineTransition = try c.decodeIfPresent(ThemeLineTransition.self, forKey: .lineTransition) ?? .pushUp
         wordAnimation = try c.decodeIfPresent(ThemeWordAnimation.self, forKey: .wordAnimation) ?? .karaokeLift
@@ -372,6 +433,36 @@ struct TouchBarTheme: Codable, Equatable, Identifiable {
         vocalSyncMode = try c.decodeIfPresent(VocalSyncMode.self, forKey: .vocalSyncMode) ?? .balanced
         colorSyncMode = try c.decodeIfPresent(ThemeColorSyncMode.self, forKey: .colorSyncMode) ?? .adaptiveArtwork
         notchStyle = try c.decodeIfPresent(ThemeNotchStyle.self, forKey: .notchStyle) ?? .attachedBezel
+    }
+
+    func resolvedFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let trimmed = customFontName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, let custom = Self.resolveSystemFont(family: trimmed, size: size, weight: weight) {
+            return custom
+        }
+        return fontStyle.font(size: size, weight: weight)
+    }
+
+    static func resolveSystemFont(family: String, size: CGFloat, weight: NSFont.Weight) -> NSFont? {
+        let appKitWeight: Int
+        if weight.rawValue >= NSFont.Weight.heavy.rawValue - 0.01 {
+            appKitWeight = 11
+        } else if weight.rawValue >= NSFont.Weight.bold.rawValue - 0.01 {
+            appKitWeight = 9
+        } else if weight.rawValue >= NSFont.Weight.semibold.rawValue - 0.01 {
+            appKitWeight = 8
+        } else if weight.rawValue >= NSFont.Weight.medium.rawValue - 0.01 {
+            appKitWeight = 6
+        } else {
+            appKitWeight = 5
+        }
+        if let f = NSFontManager.shared.font(withFamily: family, traits: [], weight: appKitWeight, size: size) {
+            return f
+        }
+        if let fallback = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size) {
+            return fallback
+        }
+        return NSFont(name: family, size: size)
     }
 
     static let builtInThemes: [TouchBarTheme] = [

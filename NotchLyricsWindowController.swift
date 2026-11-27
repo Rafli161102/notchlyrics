@@ -278,8 +278,8 @@ final class NotchLyricsWindowController: NSWindowController {
     }
 
     private func styleText(with theme: TouchBarTheme) {
-        titleLabel.font = theme.fontStyle.font(size: 12.5, weight: .semibold)
-        subtitleLabel.font = theme.fontStyle.font(size: 10.5, weight: .regular)
+        titleLabel.font = theme.resolvedFont(size: 12.5, weight: .semibold)
+        subtitleLabel.font = theme.resolvedFont(size: 10.5, weight: .regular)
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .medium)
         dividerLayer.backgroundColor = NSColor(hex: theme.borderHex).withAlphaComponent(0.45).cgColor
         playPauseButton.layer?.backgroundColor = NSColor(hex: theme.borderHex).withAlphaComponent(0.5).cgColor

@@ -17,8 +17,11 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
     private let textAlignPopup = NSPopUpButton()
     private let progressPosPopup = NSPopUpButton()
     private let fontPopup = NSPopUpButton()
+    private let customFontPopup = NSPopUpButton()
     private let mainSizePopup = NSPopUpButton()
     private let backingSizePopup = NSPopUpButton()
+    private let backingSpacingSlider = NSSlider(value: 1.0, minValue: -4.0, maxValue: 12.0, target: nil, action: nil)
+    private let backingSpacingValueLabel = NSTextField(labelWithString: "1 px")
     private let paddingPopup = NSPopUpButton()
     private let radiusPopup = NSPopUpButton()
     private let tagPopup = NSPopUpButton()
@@ -64,7 +67,7 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 576, height: 636),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -237,8 +240,8 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(animTab)
         root.addArrangedSubview(tabs)
         NSLayoutConstraint.activate([
-            tabs.widthAnchor.constraint(equalToConstant: 524),
-            tabs.heightAnchor.constraint(equalToConstant: 332)
+            tabs.widthAnchor.constraint(equalToConstant: 540),
+            tabs.heightAnchor.constraint(equalToConstant: 356)
         ])
 
         contrastLabel.font = NSFont.systemFont(ofSize: 11)
@@ -276,8 +279,31 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         configurePopup(textAlignPopup, titles: ThemeTextAlign.allCases.map { $0.displayName })
         configurePopup(progressPosPopup, titles: ThemeProgressPosition.allCases.map { $0.displayName })
         configurePopup(fontPopup, titles: ThemeFontStyle.allCases.map { $0.displayName })
+        var systemFontTitles = [L10n.tr("studio.font.presetDefault")]
+        systemFontTitles.append(contentsOf: NSFontManager.shared.availableFontFamilies.sorted())
+        configurePopup(customFontPopup, titles: systemFontTitles)
+        customFontPopup.widthAnchor.constraint(lessThanOrEqualToConstant: 155).isActive = true
+
         configurePopup(mainSizePopup, titles: ["11.5 pt", "13.0 pt", "14.5 pt"])
-        configurePopup(backingSizePopup, titles: ["9.0 pt", "10.0 pt", "11.5 pt"])
+        configurePopup(backingSizePopup, titles: ["8.0 pt", "9.0 pt", "10.0 pt", "11.5 pt"])
+
+        backingSpacingSlider.isContinuous = true
+        backingSpacingSlider.target = self
+        backingSpacingSlider.action = #selector(onSliderChanged(_:))
+        backingSpacingSlider.widthAnchor.constraint(equalToConstant: 78).isActive = true
+        backingSpacingValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        backingSpacingValueLabel.widthAnchor.constraint(equalToConstant: 38).isActive = true
+
+        let decGapBtn = NSButton(title: "-", target: self, action: #selector(onBackingSpacingStep(_:)))
+        decGapBtn.tag = -1
+        decGapBtn.controlSize = .mini
+        let incGapBtn = NSButton(title: "+", target: self, action: #selector(onBackingSpacingStep(_:)))
+        incGapBtn.tag = 1
+        incGapBtn.controlSize = .mini
+        let spacingControlRow = NSStackView(views: [backingSpacingSlider, backingSpacingValueLabel, decGapBtn, incGapBtn])
+        spacingControlRow.orientation = .horizontal
+        spacingControlRow.spacing = 4
+
         configurePopup(paddingPopup, titles: [L10n.tr("studio.pad.tight"), L10n.tr("studio.pad.standard"), L10n.tr("studio.pad.wide")])
         configurePopup(radiusPopup, titles: [L10n.tr("studio.radius.sharp"), L10n.tr("studio.radius.tactile"), L10n.tr("studio.radius.rounded")])
         configurePopup(tagPopup, titles: ["BG ·", "[BG]", "↳"])
@@ -291,14 +317,15 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
             (L10n.tr("studio.label.trackPos"), trackPosPopup, L10n.tr("studio.label.controlsPos"), controlsPosPopup),
             (L10n.tr("studio.label.eqPos"), eqPosPopup, L10n.tr("studio.label.eqStyle"), eqStylePopup),
             (L10n.tr("studio.label.backingPlacement"), backingPlacementPopup, L10n.tr("studio.label.progressPos"), progressPosPopup),
-            (L10n.tr("studio.label.font"), fontPopup, L10n.tr("studio.label.mainSize"), mainSizePopup),
-            (L10n.tr("studio.label.backingSize"), backingSizePopup, L10n.tr("studio.label.backingTag"), tagPopup),
+            (L10n.tr("studio.label.font"), fontPopup, L10n.tr("studio.label.customFont"), customFontPopup),
+            (L10n.tr("studio.label.mainSize"), mainSizePopup, L10n.tr("studio.label.backingSize"), backingSizePopup),
+            (L10n.tr("studio.label.backingSpacing"), spacingControlRow, L10n.tr("studio.label.backingTag"), tagPopup),
             (L10n.tr("studio.label.padding"), paddingPopup, L10n.tr("studio.label.radius"), radiusPopup),
             (L10n.tr("studio.label.notchStyle"), notchStylePopup, L10n.tr("studio.label.showBorder"), showBorderCheck)
         ]
 
         let grid = NSGridView(numberOfColumns: 4, rows: rows.count)
-        grid.rowSpacing = 8
+        grid.rowSpacing = 6
         grid.columnSpacing = 10
         for (r, row) in rows.enumerated() {
             grid.cell(atColumnIndex: 0, rowIndex: r).contentView = NSTextField(labelWithString: row.0)
@@ -466,13 +493,20 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         if let idx = ThemeTextAlign.allCases.firstIndex(of: t.textAlignment) { textAlignPopup.selectItem(at: idx) }
         if let idx = ThemeProgressPosition.allCases.firstIndex(of: t.progressPosition) { progressPosPopup.selectItem(at: idx) }
         if let idx = ThemeFontStyle.allCases.firstIndex(of: t.fontStyle) { fontPopup.selectItem(at: idx) }
+        if !t.customFontName.isEmpty, let cIdx = customFontPopup.itemTitles.firstIndex(of: t.customFontName) {
+            customFontPopup.selectItem(at: cIdx)
+        } else {
+            customFontPopup.selectItem(at: 0)
+        }
         if let idx = ThemeColorSyncMode.allCases.firstIndex(of: t.colorSyncMode) { colorSyncPopup.selectItem(at: idx) }
         if let idx = ThemeLineTransition.allCases.firstIndex(of: t.lineTransition) { lineTransPopup.selectItem(at: idx) }
         if let idx = ThemeWordAnimation.allCases.firstIndex(of: t.wordAnimation) { wordAnimPopup.selectItem(at: idx) }
         if let idx = ThemeNotchStyle.allCases.firstIndex(of: t.notchStyle) { notchStylePopup.selectItem(at: idx) }
 
         mainSizePopup.selectItem(at: t.mainFontSize <= 12.0 ? 0 : (t.mainFontSize <= 13.8 ? 1 : 2))
-        backingSizePopup.selectItem(at: t.backingFontSize <= 9.5 ? 0 : (t.backingFontSize <= 10.8 ? 1 : 2))
+        backingSizePopup.selectItem(at: t.backingFontSize <= 8.5 ? 0 : (t.backingFontSize <= 9.5 ? 1 : (t.backingFontSize <= 10.8 ? 2 : 3)))
+        backingSpacingSlider.doubleValue = Double(t.backingSpacing)
+        backingSpacingValueLabel.stringValue = Self.formatSpacing(t.backingSpacing)
         paddingPopup.selectItem(at: t.horizontalPadding <= 5.5 ? 0 : (t.horizontalPadding <= 11.0 ? 1 : 2))
         radiusPopup.selectItem(at: t.cornerRadius <= 1 ? 0 : (t.cornerRadius <= 4 ? 1 : 2))
         if let tIdx = tagPopup.itemTitles.firstIndex(of: t.backingTag) { tagPopup.selectItem(at: tIdx) }
@@ -548,9 +582,19 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         t.progressPosition = ThemeProgressPosition.allCases[max(0, progressPosPopup.indexOfSelectedItem)]
         t.showProgressBar = (t.progressPosition != .hidden)
 
-        t.fontStyle = ThemeFontStyle.allCases[max(0, fontPopup.indexOfSelectedItem)]
+        let chosenFontStyle = ThemeFontStyle.allCases[max(0, fontPopup.indexOfSelectedItem)]
+        if chosenFontStyle != t.fontStyle {
+            t.fontStyle = chosenFontStyle
+            t.customFontName = ""
+            customFontPopup.selectItem(at: 0)
+        } else {
+            t.fontStyle = chosenFontStyle
+            let customIdx = customFontPopup.indexOfSelectedItem
+            t.customFontName = (customIdx > 0) ? (customFontPopup.titleOfSelectedItem ?? "") : ""
+        }
         t.mainFontSize = [11.5, 13.0, 14.5][max(0, min(2, mainSizePopup.indexOfSelectedItem))]
-        t.backingFontSize = [9.0, 10.0, 11.5][max(0, min(2, backingSizePopup.indexOfSelectedItem))]
+        t.backingFontSize = [8.0, 9.0, 10.0, 11.5][max(0, min(3, backingSizePopup.indexOfSelectedItem))]
+        t.backingSpacing = CGFloat((backingSpacingSlider.doubleValue * 2.0).rounded() / 2.0)
         t.horizontalPadding = [4.0, 8.0, 16.0][max(0, min(2, paddingPopup.indexOfSelectedItem))]
         t.cornerRadius = [0.0, 4.0, 6.0][max(0, min(2, radiusPopup.indexOfSelectedItem))]
         t.backingTag = tagPopup.titleOfSelectedItem ?? "BG ·"
@@ -568,16 +612,32 @@ final class ThemeEditorWindowController: NSWindowController, NSWindowDelegate {
         return t
     }
 
+    private static func formatSpacing(_ px: CGFloat) -> String {
+        let rounded = (px * 2.0).rounded() / 2.0
+        if abs(rounded - rounded.rounded()) < 0.01 {
+            return String(format: "%.0f px", rounded)
+        }
+        return String(format: "%.1f px", rounded)
+    }
+
     @objc private func onSliderChanged(_ sender: NSSlider) {
         let ws = (wordSpeedSlider.doubleValue * 20.0).rounded() / 20.0
         let off = (karaokeOffsetSlider.doubleValue * 20.0).rounded() / 20.0
         let bgOff = (backingOffsetSlider.doubleValue * 20.0).rounded() / 20.0
         let ans = (animSpeedSlider.doubleValue * 20.0).rounded() / 20.0
+        let gap = CGFloat((backingSpacingSlider.doubleValue * 2.0).rounded() / 2.0)
         wordSpeedValueLabel.stringValue = String(format: "%.2fx", ws)
         karaokeOffsetValueLabel.stringValue = String(format: "%+.2fs", off)
         backingOffsetValueLabel.stringValue = String(format: "%+.2fs", bgOff)
         animSpeedValueLabel.stringValue = String(format: "%.2fx", ans)
+        backingSpacingValueLabel.stringValue = Self.formatSpacing(gap)
         onFieldEdited()
+    }
+
+    @objc private func onBackingSpacingStep(_ sender: NSButton) {
+        let next = (backingSpacingSlider.doubleValue + Double(sender.tag)).rounded()
+        backingSpacingSlider.doubleValue = max(-4.0, min(12.0, next))
+        onSliderChanged(backingSpacingSlider)
     }
 
     @objc private func onOffsetStepButton(_ sender: NSButton) {

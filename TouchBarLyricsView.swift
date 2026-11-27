@@ -55,6 +55,10 @@ final class TouchBarLyricsView: NSView {
         mainLyricLabel.attributedStringValue
     }
 
+    var lyricContainerFrameForTesting: NSRect { lyricContainer.frame }
+    var mainLabelFrameForTesting: NSRect { mainLyricLabel.frame }
+    var backingLabelFrameForTesting: NSRect { backingLyricLabel.frame }
+
     /// Optional accessibility override used by deterministic rendering tests.
     /// Production behavior falls back to the user's macOS Reduce Motion setting.
     var accessibilityReduceMotionOverrideForTesting: Bool?
@@ -216,7 +220,7 @@ final class TouchBarLyricsView: NSView {
         CATransaction.commit()
 
         trackLabel.isHidden = (effectiveTrackPos == .hidden)
-        trackLabel.font = newTheme.fontStyle.font(size: 10.5, weight: .medium)
+        trackLabel.font = newTheme.resolvedFont(size: 10.5, weight: .medium)
         trackLabel.textColor = trackColor
         trackLabel.alignment = (effectiveTrackPos == .right) ? .right : .left
 
@@ -317,12 +321,21 @@ final class TouchBarLyricsView: NSView {
         }
 
         let lyricW = max(120, rightCursor - leftCursor)
-        let containerY: CGFloat = (progPos == .top) ? 2.0 : 3.0
-        let containerH = max(20.0, h - 5.0)
+        let containerY: CGFloat
+        let containerH: CGFloat
+        if allowsMultiline {
+            containerY = (progPos == .top) ? 2.0 : 3.0
+            containerH = max(20.0, h - 5.0)
+        } else {
+            containerY = (progPos == .bottom) ? 2.5 : 0.5
+            let topMargin: CGFloat = (progPos == .top) ? 3.0 : 0.5
+            containerH = max(22.0, h - containerY - topMargin)
+        }
         lyricContainer.frame = NSRect(x: leftCursor, y: containerY, width: lyricW, height: containerH)
 
         let hasMain = !mainLyricLabel.isHidden
         let hasBack = !backingLyricLabel.isHidden
+        let gap = max(-4.0, min(12.0, theme.backingSpacing))
 
         if allowsMultiline {
             mainLyricLabel.preferredMaxLayoutWidth = lyricW
@@ -333,21 +346,27 @@ final class TouchBarLyricsView: NSView {
             if hasMain && hasBack {
                 switch theme.backingPlacement {
                 case .below:
-                    let maxBackH = min(containerH * 0.42, max(12, backingLyricLabel.sizeThatFits(NSSize(width: lyricW, height: containerH)).height))
-                    let maxMainH = max(14, containerH - maxBackH - 2)
-                    let usedMainH = min(maxMainH, max(14, mainLyricLabel.sizeThatFits(NSSize(width: lyricW, height: maxMainH)).height))
-                    let totalH = usedMainH + 2 + maxBackH
+                    let maxBackH = min(containerH * 0.44, max(13, ceil(backingLyricLabel.sizeThatFits(NSSize(width: lyricW, height: containerH)).height) + 1.0))
+                    let maxMainH = max(14, containerH - maxBackH - max(0, gap))
+                    let usedMainH = min(maxMainH, max(14, ceil(mainLyricLabel.sizeThatFits(NSSize(width: lyricW, height: maxMainH)).height) + 1.0))
+                    let effGap = gap >= 0 ? min(gap, max(0, containerH - usedMainH - maxBackH)) : gap
+                    let totalH = usedMainH + effGap + maxBackH
                     let startY = max(0, (containerH - totalH) / 2.0)
-                    backingLyricLabel.frame = NSRect(x: 0, y: startY, width: lyricW, height: maxBackH)
-                    mainLyricLabel.frame = NSRect(x: 0, y: startY + maxBackH + 2, width: lyricW, height: usedMainH)
+                    let backY = max(0, startY)
+                    let mainY = min(containerH - usedMainH, backY + maxBackH + effGap)
+                    backingLyricLabel.frame = NSRect(x: 0, y: backY, width: lyricW, height: maxBackH)
+                    mainLyricLabel.frame = NSRect(x: 0, y: mainY, width: lyricW, height: usedMainH)
                 case .above:
-                    let maxBackH = min(containerH * 0.42, max(12, backingLyricLabel.sizeThatFits(NSSize(width: lyricW, height: containerH)).height))
-                    let maxMainH = max(14, containerH - maxBackH - 2)
-                    let usedMainH = min(maxMainH, max(14, mainLyricLabel.sizeThatFits(NSSize(width: lyricW, height: maxMainH)).height))
-                    let totalH = usedMainH + 2 + maxBackH
+                    let maxBackH = min(containerH * 0.44, max(13, ceil(backingLyricLabel.sizeThatFits(NSSize(width: lyricW, height: containerH)).height) + 1.0))
+                    let maxMainH = max(14, containerH - maxBackH - max(0, gap))
+                    let usedMainH = min(maxMainH, max(14, ceil(mainLyricLabel.sizeThatFits(NSSize(width: lyricW, height: maxMainH)).height) + 1.0))
+                    let effGap = gap >= 0 ? min(gap, max(0, containerH - usedMainH - maxBackH)) : gap
+                    let totalH = usedMainH + effGap + maxBackH
                     let startY = max(0, (containerH - totalH) / 2.0)
-                    mainLyricLabel.frame = NSRect(x: 0, y: startY, width: lyricW, height: usedMainH)
-                    backingLyricLabel.frame = NSRect(x: 0, y: startY + usedMainH + 2, width: lyricW, height: maxBackH)
+                    let mainY = max(0, startY)
+                    let backY = min(containerH - maxBackH, mainY + usedMainH + effGap)
+                    mainLyricLabel.frame = NSRect(x: 0, y: mainY, width: lyricW, height: usedMainH)
+                    backingLyricLabel.frame = NSRect(x: 0, y: backY, width: lyricW, height: maxBackH)
                 case .inlineBeside:
                     let mainW = lyricW * 0.64
                     let backW = max(40, lyricW - mainW - 6)
@@ -365,22 +384,33 @@ final class TouchBarLyricsView: NSView {
             }
         } else if hasMain && hasBack {
             switch theme.backingPlacement {
-            case .below:
-                mainLyricLabel.frame = NSRect(x: 0, y: 11, width: lyricW, height: 14)
-                backingLyricLabel.frame = NSRect(x: 0, y: 0, width: lyricW, height: 12)
-            case .above:
-                backingLyricLabel.frame = NSRect(x: 0, y: 13, width: lyricW, height: 12)
-                mainLyricLabel.frame = NSRect(x: 0, y: 0, width: lyricW, height: 14)
+            case .below, .above:
+                let topLabel = (theme.backingPlacement == .above) ? backingLyricLabel : mainLyricLabel
+                let bottomLabel = (theme.backingPlacement == .above) ? mainLyricLabel : backingLyricLabel
+                let topH = max(11.0, min(containerH, ceil(topLabel.sizeThatFits(NSSize(width: lyricW, height: 100)).height)))
+                let bottomH = max(11.0, min(containerH, ceil(bottomLabel.sizeThatFits(NSSize(width: lyricW, height: 100)).height)))
+                let maxPosGap = max(0.0, containerH - topH - bottomH)
+                let effGap = gap >= 0 ? min(gap, maxPosGap) : gap
+                let totalSpan = topH + bottomH + effGap
+                let startY = max(0.0, ((containerH - totalSpan) * 0.5).rounded(.down))
+                let bottomY = max(0.0, startY)
+                let topY = min(containerH - topH, bottomY + bottomH + effGap)
+                bottomLabel.frame = NSRect(x: 0, y: bottomY, width: lyricW, height: bottomH)
+                topLabel.frame = NSRect(x: 0, y: topY, width: lyricW, height: topH)
             case .inlineBeside:
                 let mainW = lyricW * 0.64
-                let backW = lyricW - mainW - 6
-                mainLyricLabel.frame = NSRect(x: 0, y: 4, width: mainW, height: 17)
-                backingLyricLabel.frame = NSRect(x: mainW + 6, y: 5, width: max(40, backW), height: 15)
+                let backW = max(40, lyricW - mainW - 6)
+                let mH = min(containerH, max(14.0, ceil(mainLyricLabel.sizeThatFits(NSSize(width: mainW, height: 100)).height)))
+                let bH = min(containerH, max(12.0, ceil(backingLyricLabel.sizeThatFits(NSSize(width: backW, height: 100)).height)))
+                mainLyricLabel.frame = NSRect(x: 0, y: max(0.0, (containerH - mH) / 2.0), width: mainW, height: mH)
+                backingLyricLabel.frame = NSRect(x: mainW + 6, y: max(0.0, (containerH - bH) / 2.0), width: backW, height: bH)
             }
         } else if hasBack {
-            backingLyricLabel.frame = NSRect(x: 0, y: 5, width: lyricW, height: 15)
+            let bH = min(containerH, max(13.0, ceil(backingLyricLabel.sizeThatFits(NSSize(width: lyricW, height: 100)).height)))
+            backingLyricLabel.frame = NSRect(x: 0, y: max(0.0, (containerH - bH) / 2.0), width: lyricW, height: bH)
         } else {
-            mainLyricLabel.frame = NSRect(x: 0, y: 4, width: lyricW, height: 17)
+            let mH = min(containerH, max(15.0, ceil(mainLyricLabel.sizeThatFits(NSSize(width: lyricW, height: 100)).height)))
+            mainLyricLabel.frame = NSRect(x: 0, y: max(0.0, (containerH - mH) / 2.0), width: lyricW, height: mH)
         }
 
         CATransaction.commit()
@@ -557,7 +587,7 @@ final class TouchBarLyricsView: NSView {
             + Int((smoothedOnset * 10.0).rounded()) * 600_000
         let qBack = Int((clampedBackProg * 220.0).rounded()) + Int((backReveal * 20.0).rounded()) * 100
         let quantized = qMain &+ qBack * 10_000_000
-        let accentSignature = "\(currentAccentColor.hexString)|\(currentBackingColor.hexString)|\(theme.wordAnimation.rawValue)|\(theme.textAlignment.rawValue)|\(Int(theme.mainFontSize * 10))|\(Int(bounds.width.rounded()))|\(Int(bounds.height.rounded()))"
+        let accentSignature = "\(currentAccentColor.hexString)|\(currentBackingColor.hexString)|\(theme.wordAnimation.rawValue)|\(theme.textAlignment.rawValue)|\(theme.fontStyle.rawValue)|\(theme.customFontName)|\(Int(theme.mainFontSize * 10))|\(Int(theme.backingFontSize * 10))|\(Int(theme.backingSpacing * 10))|\(Int(bounds.width.rounded()))|\(Int(bounds.height.rounded()))"
 
         if mainChanged || backingChanged || quantized != lastRenderedQuantizedStep || mainText != lastRenderedMain || formattedBacking != lastRenderedBacking || accentSignature != lastRenderedAccentHex {
             lastRenderedQuantizedStep = quantized
@@ -569,7 +599,7 @@ final class TouchBarLyricsView: NSView {
             var mainFontSize = hasBoth ? min(theme.mainFontSize, 12.0) : theme.mainFontSize
             var backFontSize = hasBoth ? theme.backingFontSize : max(theme.backingFontSize, 11.0)
             let availW = max(120, (lyricContainer.bounds.width > 20 ? lyricContainer.bounds.width : bounds.width - theme.horizontalPadding * 2))
-            let availH = max(24, (lyricContainer.bounds.height > 16 ? lyricContainer.bounds.height : bounds.height - 5.0))
+            let availH = max(22, (lyricContainer.bounds.height > 16 ? lyricContainer.bounds.height : bounds.height - 3.0))
 
             if allowsMultiline {
                 let maxMainH = hasBoth ? availH * 0.62 : availH
@@ -582,6 +612,7 @@ final class TouchBarLyricsView: NSView {
                     minSize: 9.5,
                     weight: .bold,
                     fontStyle: theme.fontStyle,
+                    customFontName: theme.customFontName,
                     maxWidth: mainBoxW,
                     maxHeight: maxMainH
                 )
@@ -592,9 +623,33 @@ final class TouchBarLyricsView: NSView {
                         minSize: 8.5,
                         weight: .semibold,
                         fontStyle: theme.fontStyle,
+                        customFontName: theme.customFontName,
                         maxWidth: backBoxW,
                         maxHeight: maxBackH
                     )
+                }
+            } else if hasBoth {
+                // Ensure main + spacing + backing fits cleanly inside compact 30pt Touch Bar without descender clipping
+                let gap = max(-4.0, min(12.0, theme.backingSpacing))
+                let targetBudget = availH - max(0.0, gap)
+                var guardSteps = 0
+                while guardSteps < 14 {
+                    let mFont = theme.resolvedFont(size: mainFontSize, weight: .bold)
+                    let bFont = theme.resolvedFont(size: backFontSize, weight: .semibold)
+                    let mLineH = ceil(("Hgpy" as NSString).boundingRect(with: NSSize(width: availW, height: 100), options: [.usesLineFragmentOrigin], attributes: [.font: mFont]).height)
+                    let bLineH = ceil(("Hgpy" as NSString).boundingRect(with: NSSize(width: availW, height: 100), options: [.usesLineFragmentOrigin], attributes: [.font: bFont]).height)
+                    if (mLineH + bLineH) <= targetBudget { break }
+                    var shrunk = false
+                    if mainFontSize > 8.5 {
+                        mainFontSize -= 0.5
+                        shrunk = true
+                    }
+                    if backFontSize > 7.0 && (mLineH + bLineH - 0.5) > targetBudget {
+                        backFontSize -= 0.5
+                        shrunk = true
+                    }
+                    if !shrunk { break }
+                    guardSteps += 1
                 }
             }
             let align = theme.textAlignment.nsAlignment
@@ -793,6 +848,11 @@ final class TouchBarLyricsView: NSView {
             move.fromValue = 0.0
             move.toValue = -18.0
             anims.append(move)
+        case .slideRight:
+            let move = CABasicAnimation(keyPath: "transform.translation.x")
+            move.fromValue = 0.0
+            move.toValue = 18.0
+            anims.append(move)
         case .crossfade:
             let sc = CABasicAnimation(keyPath: "transform.scale")
             sc.fromValue = 1.0
@@ -803,6 +863,19 @@ final class TouchBarLyricsView: NSView {
             sc.fromValue = 1.0
             sc.toValue = 1.04
             anims.append(sc)
+        case .scaleFade:
+            let sc = CABasicAnimation(keyPath: "transform.scale")
+            sc.fromValue = 1.0
+            sc.toValue = 0.90
+            anims.append(sc)
+        case .elasticBounce:
+            let move = CABasicAnimation(keyPath: "transform.translation.y")
+            move.fromValue = 0.0
+            move.toValue = 8.0
+            let sc = CABasicAnimation(keyPath: "transform.scale")
+            sc.fromValue = 1.0
+            sc.toValue = 0.93
+            anims.append(contentsOf: [move, sc])
         }
 
         group.animations = anims
@@ -857,6 +930,11 @@ final class TouchBarLyricsView: NSView {
             slide.fromValue = 18.0
             slide.toValue = 0.0
             anims.append(slide)
+        case .slideRight:
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = -18.0
+            slide.toValue = 0.0
+            anims.append(slide)
         case .crossfade:
             let sc = CABasicAnimation(keyPath: "transform.scale")
             sc.fromValue = 1.018
@@ -867,6 +945,20 @@ final class TouchBarLyricsView: NSView {
             sc.fromValue = 0.93
             sc.toValue = 1.0
             anims.append(sc)
+        case .scaleFade:
+            let sc = CABasicAnimation(keyPath: "transform.scale")
+            sc.fromValue = 1.09
+            sc.toValue = 1.0
+            anims.append(sc)
+        case .elasticBounce:
+            group.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.32, 0.30, 1.0)
+            let slide = CABasicAnimation(keyPath: "transform.translation.y")
+            slide.fromValue = -12.0
+            slide.toValue = 0.0
+            let sc = CABasicAnimation(keyPath: "transform.scale")
+            sc.fromValue = 0.91
+            sc.toValue = 1.0
+            anims.append(contentsOf: [slide, sc])
         }
 
         group.animations = anims
@@ -933,7 +1025,9 @@ final class TouchBarLyricsView: NSView {
     ) -> NSAttributedString {
         let bounceScale: CGFloat = compactBounce ? 0.55 : 1.0
         let result = NSMutableAttributedString()
-        let baseFont = theme.fontStyle.font(size: fontSize, weight: baseWeight)
+        let baseFont = theme.resolvedFont(size: fontSize, weight: baseWeight)
+        let emphFont = theme.resolvedFont(size: fontSize, weight: highlightWeight)
+        let scaledUpFont = theme.resolvedFont(size: fontSize + (compactBounce ? 0.6 : 1.5), weight: highlightWeight)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = allowsMultiline ? .byWordWrapping : .byTruncatingTail
@@ -997,6 +1091,7 @@ final class TouchBarLyricsView: NSView {
 
             let color: NSColor
             var baselineOffset: CGFloat = 0
+            var charFont: NSFont = baseFont
 
             switch wordMode {
             case .solid:
@@ -1037,6 +1132,7 @@ final class TouchBarLyricsView: NSView {
                     let strength = min(1.0, 0.52 + intensity * (0.42 + onset * 0.20 + intonation * 0.14))
                     color = sungColor.blended(with: activeColor, fraction: strength)
                     baselineOffset = intensity * (0.40 + intonation * 0.45)
+                    if intensity > 0.35 { charFont = emphFont }
                 } else {
                     let anticipate = (1.0 - Self.smoothstep(1.6, 3.5, dist)) * 0.36
                     color = upcomingColor.blended(with: activeColor, fraction: anticipate)
@@ -1057,6 +1153,7 @@ final class TouchBarLyricsView: NSView {
                     let c = sungColor.blended(with: activeColor, fraction: min(1.0, 0.42 + intensity * (0.50 + onset * 0.15)))
                     color = c.withAlphaComponent(max(0.86, charAlphaFactor))
                     baselineOffset = intensity * (0.70 + vocalBoost * 0.55 + intonation * 1.10 + onset * 0.65) * bounceScale
+                    if intensity > 0.45 { charFont = emphFont }
                 } else {
                     // Anticipatory chromatic pre-glow for upcoming syllable readability
                     let edgeBlend = 1.0 - Self.smoothstep(1.1, 3.5, dist)
@@ -1064,10 +1161,89 @@ final class TouchBarLyricsView: NSView {
                     color = c.withAlphaComponent(c.alphaComponent * charAlphaFactor)
                     baselineOffset = edgeBlend * (0.22 + intonation * 0.24) * bounceScale
                 }
+
+            case .waveRipple:
+                let wave = CGFloat(sin(Double(i) * 0.65 - animPhase * 1.45))
+                if dist <= 1.6 {
+                    let proximity = 1.0 - Self.smoothstep(0.0, 3.8, abs(dist))
+                    let waveAmp = (0.45 + vocalBoost * 0.65 + onset * 0.45) * bounceScale
+                    baselineOffset = max(0, wave) * (0.35 + proximity * 0.85) * waveAmp
+                    let mix = min(1.0, 0.26 + proximity * 0.68 + max(0, wave) * 0.18)
+                    color = sungColor.blended(with: activeColor, fraction: mix).withAlphaComponent(max(0.84, charAlphaFactor))
+                    if proximity > 0.55 { charFont = emphFont }
+                } else {
+                    let tailWave = (1.0 - Self.smoothstep(1.6, 5.0, dist))
+                    baselineOffset = max(0, wave) * tailWave * 0.35 * bounceScale
+                    color = upcomingColor.blended(with: activeColor, fraction: tailWave * 0.42).withAlphaComponent(upcomingColor.alphaComponent * charAlphaFactor)
+                }
+
+            case .springPop:
+                if dist < -1.0 {
+                    let springTail = Self.smoothstep(-3.8, -1.0, dist)
+                    color = sungColor.blended(with: activeColor, fraction: springTail * 0.32).withAlphaComponent(charAlphaFactor)
+                    baselineOffset = springTail * 0.25 * bounceScale
+                } else if dist <= 1.5 {
+                    let hit = 1.0 - Self.smoothstep(0.0, 1.6, abs(dist))
+                    let overshoot = sin(Double(hit) * Double.pi * 0.85)
+                    baselineOffset = CGFloat(overshoot) * (1.15 + onset * 0.90 + vocalBoost * 0.60) * bounceScale
+                    color = sungColor.blended(with: activeColor, fraction: min(1.0, 0.55 + hit * 0.45))
+                    if hit > 0.30 { charFont = scaledUpFont }
+                } else {
+                    color = upcomingColor.withAlphaComponent(upcomingColor.alphaComponent * charAlphaFactor)
+                }
+
+            case .spotlightGlow:
+                let spotlight = 1.0 - Self.smoothstep(0.0, 2.6, abs(dist))
+                if dist <= 2.2 {
+                    let bright = min(1.0, 0.20 + spotlight * (0.78 + onset * 0.18))
+                    color = (dist <= 0.4 ? sungColor : upcomingColor).blended(with: activeColor, fraction: bright)
+                    baselineOffset = spotlight * (0.35 + intonation * 0.40) * bounceScale
+                    if spotlight > 0.45 { charFont = scaledUpFont }
+                } else {
+                    color = upcomingColor.withAlphaComponent(upcomingColor.alphaComponent * 0.72 * charAlphaFactor)
+                }
+
+            case .neonBounce:
+                let pulse = 0.5 + 0.5 * CGFloat(sin(animPhase * 1.6 - Double(i) * 0.35))
+                if dist <= 1.4 {
+                    let core = 1.0 - Self.smoothstep(0.0, 2.0, abs(dist))
+                    let mix = min(1.0, 0.35 + core * 0.55 + pulse * 0.20)
+                    color = sungColor.blended(with: activeColor, fraction: mix)
+                    baselineOffset = (core * (0.85 + vocalBoost * 0.75) + pulse * 0.35) * bounceScale
+                    if core > 0.38 { charFont = emphFont }
+                } else {
+                    let rim = (1.0 - Self.smoothstep(1.4, 4.2, dist)) * (0.35 + pulse * 0.20)
+                    color = upcomingColor.blended(with: activeColor, fraction: rim).withAlphaComponent(upcomingColor.alphaComponent * charAlphaFactor)
+                }
+
+            case .elasticScale:
+                if dist < -1.0 {
+                    color = sungColor.blended(with: activeColor, fraction: 0.18).withAlphaComponent(charAlphaFactor)
+                } else if dist <= 1.5 {
+                    let peak = 1.0 - Self.smoothstep(0.0, 1.5, abs(dist))
+                    color = sungColor.blended(with: activeColor, fraction: min(1.0, 0.45 + peak * 0.55))
+                    if peak > 0.35 { charFont = scaledUpFont }
+                    baselineOffset = peak * (0.35 + onset * 0.45) * bounceScale
+                } else {
+                    let lead = 1.0 - Self.smoothstep(1.5, 3.2, dist)
+                    color = upcomingColor.blended(with: activeColor, fraction: lead * 0.32).withAlphaComponent(upcomingColor.alphaComponent * charAlphaFactor)
+                }
+
+            case .letterDrop:
+                let dropY = (1.0 - revealT) * 2.2 * bounceScale
+                if dist <= 1.0 {
+                    let focus = 1.0 - Self.smoothstep(0.0, 1.8, abs(dist))
+                    color = sungColor.blended(with: activeColor, fraction: min(1.0, 0.30 + focus * 0.65)).withAlphaComponent(max(0.75, revealT))
+                    baselineOffset = dropY + focus * 0.45 * bounceScale
+                    if focus > 0.45 { charFont = emphFont }
+                } else {
+                    color = upcomingColor.withAlphaComponent(upcomingColor.alphaComponent * max(0.28, revealT))
+                    baselineOffset = dropY
+                }
             }
 
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: baseFont,
+                .font: charFont,
                 .foregroundColor: color,
                 .baselineOffset: baselineOffset,
                 .paragraphStyle: paragraph
@@ -1084,6 +1260,7 @@ final class TouchBarLyricsView: NSView {
         minSize: CGFloat,
         weight: NSFont.Weight,
         fontStyle: ThemeFontStyle,
+        customFontName: String = "",
         maxWidth: CGFloat,
         maxHeight: CGFloat
     ) -> CGFloat {
@@ -1092,9 +1269,11 @@ final class TouchBarLyricsView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
         paragraph.lineSpacing = 1.0
+        let trimmedCustom = customFontName.trimmingCharacters(in: .whitespacesAndNewlines)
 
         while size > minSize {
-            let font = fontStyle.font(size: size, weight: weight)
+            let font = (!trimmedCustom.isEmpty ? TouchBarTheme.resolveSystemFont(family: trimmedCustom, size: size, weight: weight) : nil)
+                ?? fontStyle.font(size: size, weight: weight)
             let rect = (text as NSString).boundingRect(
                 with: NSSize(width: maxWidth, height: 400),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
