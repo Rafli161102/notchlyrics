@@ -12,7 +12,14 @@ const {
   fetchLyrics,
   computeFrameState
 } = require('./lyrics-engine');
+const { startMprisWatcher, sendMprisCommand } = require('./mpris_bridge');
 const { LANGUAGES, t } = require('./i18n');
+
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-transparent-visuals');
+}
+
+const isLinux = process.platform === 'linux';
 
 const PHI = 1.6180339887;
 const STYLE_DIMENSIONS = {
@@ -34,11 +41,20 @@ let mainWindow = null;
 let tray = null;
 let rebuildTrayMenu = () => {};
 let smtcProc = null;
+let mprisWatcher = null;
 let currentStyle = 'attachedBezel';
 let isExpanded = false;
 let romanizeEnabled = true;
 let appLanguage = 'en';
 let manualOffsetSeconds = 0;
+
+function idleLabel() {
+  return t(appLanguage, isLinux ? 'idleStatusLinux' : 'idleStatus');
+}
+
+function headerLabel() {
+  return t(appLanguage, isLinux ? 'appHeaderLinux' : 'appHeader');
+}
 
 function clampManualOffset(val) {
   const num = Number(val) || 0;
@@ -69,7 +85,9 @@ function loadSettings() {
 
 function saveSettings() {
   try {
-    fs.writeFileSync(settingsPath(), JSON.stringify({
+    const file = settingsPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
       style: currentStyle,
       romanize: romanizeEnabled,
       language: appLanguage,
@@ -91,7 +109,7 @@ let playback = {
 let currentTrackKey = '';
 let activeLyrics = [];
 let preparedLines = [];
-let lyricsStatus = t(appLanguage, 'idleStatus');
+let lyricsStatus = idleLabel();
 
 function rebuildPreparedLines() {
   preparedLines = (activeLyrics || []).map((line) => ({
@@ -136,7 +154,9 @@ function createWindow() {
   });
 
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  try {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } catch (_) {}
   mainWindow.webContents.on('did-finish-load', () => emitPlaybackSnapshot());
   mainWindow.on('show', () => emitPlaybackSnapshot());
   mainWindow.on('hide', () => emitPlaybackSnapshot());
@@ -172,7 +192,35 @@ function startWindowsSMTC() {
   });
 }
 
+function startMediaWatcher() {
+  stopMediaWatcher();
+  if (process.platform === 'win32') {
+    startWindowsSMTC();
+  } else if (process.platform === 'linux') {
+    mprisWatcher = startMprisWatcher({
+      onState: (state) => {
+        handleMediaState(state).catch(() => {});
+      }
+    });
+  }
+}
+
+function stopMediaWatcher() {
+  if (smtcProc && !smtcProc.killed) {
+    smtcProc.kill();
+  }
+  smtcProc = null;
+  if (mprisWatcher && typeof mprisWatcher.stop === 'function') {
+    mprisWatcher.stop();
+  }
+  mprisWatcher = null;
+}
+
 function sendMediaCommand(command) {
+  if (process.platform === 'linux') {
+    sendMprisCommand(command).catch(() => {});
+    return;
+  }
   if (process.platform !== 'win32') return;
   const map = { togglePlayPause: 'toggle', next: 'next', previous: 'previous' };
   const arg = map[command];
@@ -305,7 +353,7 @@ async function handleMediaState(next) {
     currentTrackKey = '';
     activeLyrics = [];
     preparedLines = [];
-    lyricsStatus = t(appLanguage, 'idleStatus');
+    lyricsStatus = idleLabel();
     rebuildTrayMenu();
   }
 
@@ -338,7 +386,7 @@ function buildTray() {
       checked: appLanguage === l.code,
       click: () => {
         appLanguage = l.code;
-        if (!playback.title) lyricsStatus = t(appLanguage, 'idleStatus');
+        if (!playback.title) lyricsStatus = idleLabel();
         saveSettings();
         rebuildTrayMenu();
         emitPlaybackSnapshot();
@@ -355,7 +403,7 @@ function buildTray() {
     ];
 
     const menu = Menu.buildFromTemplate([
-      { label: t(appLanguage, 'appHeader'), enabled: false },
+      { label: headerLabel(), enabled: false },
       { type: 'separator' },
       {
         label: t(appLanguage, 'styleAttached'),
@@ -412,12 +460,14 @@ function buildTray() {
 
 async function showAboutDialog() {
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  const platformName = isLinux ? 'Linux' : 'Windows';
+  const detailKey = isLinux ? 'aboutDetailLinux' : 'aboutDetail';
   const res = await dialog.showMessageBox({
     type: 'info',
     icon: fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined,
     title: 'NotchLyrics',
-    message: `NotchLyrics for Windows v${app.getVersion()}`,
-    detail: t(appLanguage, 'aboutDetail'),
+    message: `NotchLyrics for ${platformName} v${app.getVersion()}`,
+    detail: t(appLanguage, detailKey),
     buttons: [t(appLanguage, 'aboutClose'), t(appLanguage, 'aboutOpenReleases')],
     defaultId: 0,
     cancelId: 0
@@ -432,12 +482,12 @@ ipcMain.on('notch-hover', (_event, expanded) => updateWindowFrame(expanded));
 
 app.whenReady().then(() => {
   loadSettings();
-  if (!playback.title) lyricsStatus = t(appLanguage, 'idleStatus');
+  if (!playback.title) lyricsStatus = idleLabel();
   createWindow();
   buildTray();
-  startWindowsSMTC();
+  startMediaWatcher();
 });
 
 app.on('before-quit', () => {
-  if (smtcProc && !smtcProc.killed) smtcProc.kill();
+  stopMediaWatcher();
 });

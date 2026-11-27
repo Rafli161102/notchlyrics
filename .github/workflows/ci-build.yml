@@ -70,7 +70,7 @@ jobs:
             if (!hasX64 || !hasArm64) {
               throw new Error('Expected both x64 and ARM64 app.asar, found: ' + asars.join(', '));
             }
-            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'i18n.js', 'win_smtc.ps1', 'assets', 'renderer'];
+            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'mpris_bridge.js', 'i18n.js', 'win_smtc.ps1', 'assets', 'renderer'];
             for (const asarPath of asars) {
               const buf = fs.readFileSync(asarPath);
               const jsonLen = buf.readUInt32LE(12);
@@ -100,3 +100,65 @@ jobs:
         with:
           name: NotchLyrics-Windows-x64-arm64
           path: windows/dist/*.exe
+
+  linux-package:
+    runs-on: ubuntu-latest
+    needs: windows-engine-tests
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install Linux desktop dependencies & package AppImage/deb targets
+        run: |
+          cd windows
+          npm ci
+          npm run dist:linux
+      - name: Verify packaged Linux app.asar runtime files & .AppImage/.deb outputs
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            function findAsars(dir, out = []) {
+              if (!fs.existsSync(dir)) return out;
+              for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, ent.name);
+                if (ent.isDirectory()) findAsars(full, out);
+                else if (ent.isFile() && ent.name === 'app.asar') out.push(full);
+              }
+              return out;
+            }
+            const asars = findAsars('windows/dist');
+            if (!asars.length) {
+              throw new Error('Expected Linux app.asar inside windows/dist');
+            }
+            const req = ['main.js', 'preload.js', 'lyrics-engine.js', 'mpris_bridge.js', 'i18n.js', 'assets', 'renderer'];
+            for (const asarPath of asars) {
+              const buf = fs.readFileSync(asarPath);
+              const jsonLen = buf.readUInt32LE(12);
+              const header = JSON.parse(buf.subarray(16, 16 + jsonLen).toString('utf8'));
+              const files = header.files || {};
+              for (const item of req) {
+                if (!Object.prototype.hasOwnProperty.call(files, item)) {
+                  throw new Error('Missing ' + item + ' in ' + asarPath);
+                }
+              }
+              if (Object.prototype.hasOwnProperty.call(files, 'tests')) {
+                throw new Error('Unexpected dev tests dir inside ' + asarPath);
+              }
+            }
+            const distFiles = fs.readdirSync('windows/dist');
+            const hasAppImage = distFiles.some((f) => f.endsWith('.AppImage'));
+            const hasDeb = distFiles.some((f) => f.endsWith('.deb'));
+            if (!hasAppImage || !hasDeb) {
+              throw new Error('Expected both .AppImage and .deb in windows/dist, found: ' + distFiles.join(', '));
+            }
+            console.log('Verified Linux packages:', distFiles.filter((f) => f.endsWith('.AppImage') || f.endsWith('.deb')));
+          "
+      - name: Upload Linux AppImage & deb artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: NotchLyrics-Linux-x64
+          path: |
+            windows/dist/*.AppImage
+            windows/dist/*.deb

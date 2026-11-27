@@ -2,6 +2,22 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-11-27
+
+### Added
+- **Native Linux Desktop Support (`windows/mpris_bridge.js`, `windows/package.json`):** Zero-dependency Node.js MPRIS2 bridge using `playerctl --follow` streaming (with `gdbus` and `dbus-send` D-Bus polling fallback) for Spotify, Chrome, Firefox, VLC, and native MPRIS2 players, X11/Wayland transparent always-on-top `BrowserWindow` configuration, `userData` persistence, system tray integration, and `dist:linux` packaging for `.AppImage` and `.deb` (`x64`).
+- **Official Landing & Download Website (`site/`):** Vercel-ready static site for [`https://notchlyrics.mrr.my.id`](https://notchlyrics.mrr.my.id) featuring automatic OS detection (`macOS`, `Windows`, `Linux`), an interactive live OLED Notch simulator, platform-specific install tabs, Open Graph/SEO metadata, and `site/vercel.json` headers.
+- **Per-Track Refetch Cache & Manual Lyrics Offset:** Added **Refetch Lyrics (Clear Cache)** (`clearTrackCache` removing only the active track cache) and **Manual Lyrics Offset** (`+0.5s`, `+0.1s`, `-0.1s`, `-0.5s`, `0.0s` reset) persisted in `settings.json` across macOS, Windows, and Linux.
+- **Touch Bar & Studio Customization Polish:** Fixed background vocal clipping on Touch Bar, added per-pixel spacing, custom font selection, karaoke animation refinements, and deterministic Reduce Motion lift tests.
+
+### Changed
+- **Lock-Free `vDSP` CoreAudio Pipeline (`VocalAutoSyncEngine.swift`):** Upgraded real-time vocal energy and intonation tracking to a lock-free ring buffer and Accelerate `vDSP` processing.
+- **Event-Driven Desktop IPC & `rAF` Karaoke Loop (`windows/main.js`, `windows/renderer/lyrics-timing.js`):** Replaced redundant idle/paused polling broadcasts with event-driven snapshots and a client-side `requestAnimationFrame` sweep loop that halts automatically when paused or hidden.
+- **Node.js 24 CI/CD & Linux Release Automation (`.github/workflows/`):** Updated workflows to Node.js 24 (`actions/checkout@v6`, `actions/setup-node@v6`, `actions/upload-artifact@v6`) and added the `linux-package` job (`ubuntu-latest`) to build, verify (`app.asar` + outputs), and attach `.AppImage` and `.deb` assets alongside macOS and Windows builds.
+
+### Fixed
+- **LRC, Enhanced LRC & Kuwo Parser Reliability (`windows/lyrics-engine.js`, `LyricsParserAndFetcher.swift`):** Added Enhanced LRC `<mm:ss.xx>` word tag parsing, instrumental break `endTime` handling on empty timestamp lines, band/artist preservation (`Earth, Wind & Fire`, `Tyler, The Creator`, `Sammy Davis, Jr.`), `cleanTitle` pipe/quote guards, and resilient `parseKuwoSearchResponse` / `mapKuwoLrcList` mapping.
+
 ## [2.3.0] - 2026-11-27
 
 ### Added
