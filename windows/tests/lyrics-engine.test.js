@@ -9,8 +9,11 @@ const {
   resolveExpectedTitleArtist,
   buildQueryCandidates,
   scoreCandidate,
+  splitMainAndBacking,
   parseYRC,
   parseLRC,
+  parseKuwoSearchResponse,
+  mapKuwoLrcList,
   romanizeKoreanHangul,
   isRTLScript,
   DiskLyricsCache,
@@ -117,8 +120,62 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'notchlyrics-win-test-'));
 const cache = new DiskLyricsCache(tmpDir);
 cache.save({ lines: lrc, sourceName: 'LRCLIB', referenceDuration: 210 }, 'k|a|210', 'k|a');
 const reloaded = cache.load('k|a|210', 'k|a', 210);
+const hashBase = path.basename(cache._pathFor('k|a|210'), '.json');
 check(reloaded && reloaded.lines.length === 2, 'disk cache saves and reloads synced track');
+check(hashBase.length >= 32, 'disk cache uses >= 32 hex chars (128-bit SHA-256) key');
 fs.rmSync(tmpDir, { recursive: true, force: true });
+
+// cleanArtist comma & "&" group preservation
+check(cleanArtist('Earth, Wind & Fire') === 'Earth, Wind & Fire', 'cleanArtist preserves Earth, Wind & Fire intact');
+check(cleanArtist('Tyler, The Creator') === 'Tyler, The Creator', 'cleanArtist preserves Tyler, The Creator intact');
+check(cleanArtist('Sammy Davis, Jr.') === 'Sammy Davis, Jr.', 'cleanArtist preserves Jr. suffix intact');
+check(cleanArtist('Dua Lipa feat. DaBaby') === 'Dua Lipa', 'cleanArtist strips collaboration feat. suffix');
+check(cleanArtist('Kenshi Yonezu, Yojiro Noda') === 'Kenshi Yonezu', 'cleanArtist splits true multi-artist commas');
+
+// cleanTitle jpQuote & | / // metadata guard
+check(cleanTitle('Artist - Track | Official Music Video') === 'Artist - Track', 'cleanTitle strips | Official Music Video');
+check(cleanTitle('Artist - Track // Lyrics Video') === 'Artist - Track', 'cleanTitle strips // Lyrics Video');
+check(cleanTitle('Artist - Track | Part II') === 'Artist - Track | Part II', 'cleanTitle keeps non-metadata | suffix intact');
+check(cleanTitle('Main Song 「Anime OP」 Full Theme') === 'Main Song 「Anime OP」 Full Theme', 'cleanTitle keeps main title when text exists after Japanese quote');
+
+// splitMainAndBacking inline syntactic parens vs backing vocals & ad-libs
+const inlineMain = splitMainAndBacking("(I can't get no) satisfaction");
+check(inlineMain.main === "(I can't get no) satisfaction" && inlineMain.backing === null, 'splitMainAndBacking preserves inline parenthesized main lyrics');
+const adLibLead = splitMainAndBacking('(Ooh yeah) Dancing in the rain');
+check(adLibLead.main === 'Dancing in the rain' && adLibLead.backing === 'Ooh yeah', 'splitMainAndBacking extracts leading ad-lib backing');
+
+// parseLRC empty break endTime & Enhanced LRC <mm:ss.xx>
+const breakParsed = parseLRC('[00:45.00]Aku pulang\n[00:48.00]\n[00:56.00]Sampai');
+check(breakParsed.length === 2 && breakParsed[0].endTime === 48.0, 'parseLRC uses empty timestamp row as endTime instrumental break');
+check(computeLineProgress(breakParsed[0], 47.9, 56.0) === 1, 'computeLineProgress respects line.endTime instead of nextLineTime across breaks');
+
+const enhParsed = parseLRC('[00:12.00]<00:12.00>Hello <00:12.50>world\n[00:14.00]Next');
+check(
+  enhParsed.length === 2 &&
+  enhParsed[0].words.length === 2 &&
+  enhParsed[0].words[0].text === 'Hello ' &&
+  enhParsed[0].words[0].duration === 0.5 &&
+  enhParsed[0].words[1].text === 'world',
+  'parseLRC parses Enhanced LRC word tags into YRC-compatible line.words'
+);
+
+// Kuwo search parser & direct structured lrclist mapping
+const kuwoParsed = parseKuwoSearchResponse("{'abslist':[{'ARTIST':'Aimer&Sawano','SONGNAME':'ninelie','DURATION':'260','MUSICRID':'MUSIC_998877'}]}");
+check(kuwoParsed.length === 1 && kuwoParsed[0].rid === '998877' && kuwoParsed[0].artist === 'Aimer, Sawano', 'parseKuwoSearchResponse parses JS-like abslist safely');
+const kuwoMapped = mapKuwoLrcList([
+  { time: '0.50', lineLyric: 'Aimer - ninelie' },
+  { time: '10.00', lineLyric: 'First line (echo)' },
+  { time: '14.50', lineLyric: '' },
+  { time: '22.00', lineLyric: 'Second line' }
+]);
+check(
+  kuwoMapped.length === 2 &&
+  kuwoMapped[0].mainText === 'First line' &&
+  kuwoMapped[0].backingText === 'echo' &&
+  kuwoMapped[0].endTime === 14.5 &&
+  kuwoMapped[1].time === 22.0,
+  'mapKuwoLrcList maps structured Kuwo rows & instrumental breaks directly'
+);
 
 if (failures > 0) {
   console.error(`${failures} failing Windows engine test(s)`);

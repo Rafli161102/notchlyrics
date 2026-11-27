@@ -10,15 +10,30 @@ function normalizeDashSeparators(text) {
 
 function cleanTitle(raw) {
   let s = String(raw || '');
-  const jpQuote = s.match(/[\u300C\u300E]([^\u300D\u300F]+)[\u300D\u300F]/);
-  if (jpQuote && jpQuote[1] && jpQuote[1].trim().length >= 2) {
-    s = jpQuote[1].trim();
-  }
+  const streamMetaAfterSep = '(?:Official|Lyrics?|Lirik|MV|M\\/V|Music\\s*Video|Audio|Video|Live|Topic|Visualizer|HD|4K|Sub(?:titles?)?|Karaoke|Full|Prod\\.?)';
+  s = s.replace(new RegExp(`\\s*\\|\\s*(?=${streamMetaAfterSep}\\b).*$`, 'i'), '');
+  s = s.replace(new RegExp(`\\s*\\/\\/\\s*(?=${streamMetaAfterSep}\\b).*$`, 'i'), '');
   s = s.replace(/\s*[(\[]\s*(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Official\s*Lyric\s*Video|Lyric\s*Video|Lyrics?\s*Video|Lyrics?|Lirik(\s*Terjemahan)?|Sub\s*(Indo|Eng|Indonesia|English)|Audio(\s*Only)?|Visualizer|M\/?V|HD|4K|Live(\s*Performance)?|Explicit|Clean(\s*Version)?|Single\s*Version|Radio\s*Edit|Album\s*Version|Remaster(ed)?(\s*\d+)?|Slowed(\s*\+\s*Reverb)?|Sped\s*Up|Speed\s*Up|Karaoke|Color\s*Coded|Prod\.?\s*by\s+[^)\]]+)\s*[)\]]/gi, '');
   s = s.replace(/^\s*\[(MV|M\/V|Lyrics?|Audio|Official)\]\s*/i, '');
   s = s.replace(/\s*[-\u2013\u2014]\s*(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Lyric\s*Video|Lyrics?|Lirik(\s*Terjemahan)?|Audio(\s*Only)?|Remaster(ed)?(\s*\d+)?|Single\s*Version|Radio\s*Edit|YouTube)\s*$/i, '');
-  s = s.replace(/\s*\|\s*.*$/, '');
-  s = s.replace(/\s*\/\/\s*.*$/, '');
+  s = s.replace(/(?:\s+|(?<=[\u300D\u300F\)\]]))(Official\s*(Music\s*)?Video|Official\s*Audio|Official\s*MV|Music\s*Video)\s*$/i, '');
+
+  // Unwrap 「...」 / 『...』 only when outside text is a short uploader/artist prefix (e.g. "YOASOBI「夜に駆ける」"),
+  // never when a valid main title precedes or follows the quote.
+  const jpQuote = s.match(/([\u300C\u300E])([^\u300D\u300F]+)[\u300D\u300F]/);
+  if (jpQuote && jpQuote[2] && jpQuote[2].trim().length >= 2) {
+    const idx = jpQuote.index;
+    const prefix = s.slice(0, idx).trim();
+    const suffix = s.slice(idx + jpQuote[0].length).trim();
+    const prefixWords = prefix ? prefix.split(/\s+/).filter(Boolean) : [];
+    const hasDashSep = /\s[-–—]\s/.test(prefix) || /\s[-–—]\s/.test(suffix);
+    const quoteInner = jpQuote[2].trim();
+    const quoteLooksLikeTag = /^(ver\.?|version|live|remix|cover|inst\.?|instrumental|acoustic|op|ed|ost|part\s*\d+|part\s*[ivx]+)$/i.test(quoteInner);
+    if (!hasDashSep && suffix.length === 0 && prefixWords.length <= 2 && !quoteLooksLikeTag) {
+      s = quoteInner;
+    }
+  }
+
   return normalizeDashSeparators(s).trim();
 }
 
@@ -26,9 +41,21 @@ function cleanArtist(raw) {
   let s = String(raw || '')
     .replace(/\s*[-\u2013\u2014]\s*Topic$/i, '')
     .replace(/\s*VEVO$/i, '')
-    .replace(/\s*(Official|Channel)$/i, '');
-  s = s.split(',')[0] || s;
-  s = s.replace(/\s+(feat\.?|ft\.?|featuring|x|&)\s+.*$/i, '');
+    .replace(/\s*(Official|Channel)$/i, '')
+    .trim();
+
+  // Strip only collaboration suffixes (feat./ft./featuring), never "&" in band names
+  s = s.replace(/\s*[(\[]?\s*\b(?:feat\.?|ft\.?|featuring)\b.*$/i, '').trim();
+
+  // Split comma only when NOT a known single-entity comma pattern like "Earth, Wind & Fire", "Tyler, The Creator", ", Jr.", etc.
+  if (s.includes(',')) {
+    const isSingleCommaEntity =
+      /^[^,]+,\s+[^,]+\s+&\s+[^,]+$/i.test(s) ||
+      /^[^,]+,\s+(The|Jr\.?|Sr\.?|Inc\.?|Ltd\.?|LLC)\b/i.test(s);
+    if (!isSingleCommaEntity) {
+      s = s.split(',')[0].trim();
+    }
+  }
   return s.trim();
 }
 
@@ -282,14 +309,35 @@ function splitMainAndBacking(raw) {
   });
 
   const ignoreTags = new Set(['x2', 'x3', 'x4', '2x', '3x', '4x', 'instrumental', 'intro', 'outro', 'verse', 'chorus', 'bridge', 'solo']);
-  working = working.replace(/\(([^()]{1,60})\)/g, (match, inner, offset) => {
-    const t = inner.trim();
+  const adLibPattern = /^(?:oh+|ooh+|yeah+|yea+|ah+|uh+|uh-huh|m+m+|h+m+|hey+|la+|na+|da+|wh?oa+h*|ha+|ayy+|yo+)(?:[\s,!~-]+(?:oh+|ooh+|yeah+|yea+|ah+|uh+|uh-huh|m+m+|h+m+|hey+|la+|na+|da+|wh?oa+h*|ha+|ayy+|yo+))*$/i;
+
+  const parenMatches = [...working.matchAll(/\(([^()]{1,60})\)/g)];
+  let nextWorking = '';
+  let cursor = 0;
+  for (const m of parenMatches) {
+    const idx = m.index;
+    const matchStr = m[0];
+    const t = m[1].trim();
     const low = t.toLowerCase();
-    if (!t || ignoreTags.has(low) || low.startsWith('verse ') || low.startsWith('chorus ')) return match;
-    lastRatio = Math.max(lastRatio, offset / Math.max(1, working.length));
-    backingParts.push(t);
-    return '';
-  });
+    const before = working.slice(0, idx).trim();
+    const after = working.slice(idx + matchStr.length).trim();
+
+    const isMetadataTag = !t || ignoreTags.has(low) || low.startsWith('verse ') || low.startsWith('chorus ');
+    const isStandaloneLine = before.length === 0 && after.length === 0;
+    const isEndOfLineBacking = before.length > 0 && /^[\s.,!?~♪"]*$/.test(after);
+    const isAdLib = adLibPattern.test(t);
+
+    if (!isMetadataTag && (isStandaloneLine || isEndOfLineBacking || isAdLib)) {
+      lastRatio = Math.max(lastRatio, idx / Math.max(1, working.length));
+      backingParts.push(t);
+      nextWorking += working.slice(cursor, idx);
+    } else {
+      nextWorking += working.slice(cursor, idx + matchStr.length);
+    }
+    cursor = idx + matchStr.length;
+  }
+  nextWorking += working.slice(cursor);
+  working = nextWorking;
 
   const mainCleaned = working.replace(/\s{2,}/g, ' ').trim();
   const backingText = backingParts.length ? backingParts.join(' · ') : null;
@@ -333,6 +381,51 @@ function parseYRC(yrc) {
   return result.sort((a, b) => a.time - b.time);
 }
 
+function parseEnhancedLRCWords(lineTime, rawText, nextEntryTime) {
+  const tagRe = /<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>/g;
+  const tags = [...String(rawText || '').matchAll(tagRe)];
+  if (!tags.length) return [];
+
+  const segments = [];
+  const prefix = rawText.slice(0, tags[0].index);
+  const toSeconds = (m) => {
+    const fracStr = m[3] || '';
+    const div = fracStr.length === 3 ? 1000 : (fracStr.length === 2 ? 100 : 10);
+    return Number(m[1]) * 60 + Number(m[2]) + (fracStr ? Number(fracStr) / div : 0);
+  };
+
+  const firstTagTime = toSeconds(tags[0]);
+  if (prefix) {
+    segments.push({ time: lineTime, nextTime: firstTagTime, text: prefix });
+  }
+  for (let i = 0; i < tags.length; i++) {
+    const start = toSeconds(tags[i]);
+    const textStart = tags[i].index + tags[i][0].length;
+    const textEnd = (i + 1 < tags.length) ? tags[i + 1].index : rawText.length;
+    const segText = rawText.slice(textStart, textEnd);
+    const nextT = (i + 1 < tags.length) ? toSeconds(tags[i + 1]) : null;
+    if (segText) {
+      segments.push({ time: start, nextTime: nextT, text: segText });
+    }
+  }
+
+  return segments.map((seg, idx) => {
+    let dur = 0.35;
+    if (seg.nextTime !== null && seg.nextTime > seg.time) {
+      dur = seg.nextTime - seg.time;
+    } else if (typeof nextEntryTime === 'number' && nextEntryTime > seg.time) {
+      dur = Math.min(nextEntryTime - seg.time, Math.max(0.25, seg.text.trim().length * 0.09));
+    } else {
+      dur = Math.max(0.22, seg.text.trim().length * 0.09);
+    }
+    return {
+      time: seg.time,
+      duration: Math.max(0.05, dur),
+      text: seg.text
+    };
+  });
+}
+
 function parseLRC(lrc) {
   const timeRe = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
   const entries = [];
@@ -341,26 +434,40 @@ function parseLRC(lrc) {
     if (!matches.length) continue;
     const last = matches[matches.length - 1];
     const text = rawLine.slice(last.index + last[0].length).trim();
-    if (!text) continue;
+    const isBreak = text.length === 0;
     for (const m of matches) {
       const fracStr = m[3] || '';
       const div = fracStr.length === 3 ? 1000 : (fracStr.length === 2 ? 100 : 10);
       const t = Number(m[1]) * 60 + Number(m[2]) + (fracStr ? Number(fracStr) / div : 0);
-      entries.push({ time: t, text });
+      entries.push({ time: t, text, isBreak });
     }
   }
   entries.sort((a, b) => a.time - b.time);
   const parsed = [];
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.isBreak) {
+      if (parsed.length > 0 && parsed[parsed.length - 1].endTime == null) {
+        const prev = parsed[parsed.length - 1];
+        prev.endTime = Math.max(prev.time + 0.35, entry.time);
+      }
+      continue;
+    }
+    const nextEntryTime = (i + 1 < entries.length) ? entries[i + 1].time : null;
+    const words = parseEnhancedLRCWords(entry.time, entry.text, nextEntryTime);
     const cleanLine = entry.text.replace(/<\d{1,2}:\d{2}(?:[.:]\d{1,3})?>/g, '');
     const split = splitMainAndBacking(cleanLine);
     if (split.main || split.backing) {
+      const endTime = words.length
+        ? words[words.length - 1].time + words[words.length - 1].duration
+        : undefined;
       parsed.push({
         time: entry.time,
+        endTime,
         mainText: split.main,
         backingText: split.backing,
         backingIsSuffix: split.backingIsSuffix,
-        words: []
+        words
       });
     }
   }
@@ -374,7 +481,7 @@ class DiskLyricsCache {
   }
 
   _pathFor(key) {
-    const hex = crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 16);
+    const hex = crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 32);
     return path.join(this.cacheDir, `${hex}.json`);
   }
 
@@ -431,39 +538,102 @@ async function fetchJson(url, timeoutMs = 2800, headers = {}) {
   }
 }
 
+function parseKuwoSearchResponse(body) {
+  const raw = String(body || '').trim();
+  if (!raw) return [];
+
+  // Attempt strict JSON parse first
+  try {
+    const parsed = JSON.parse(raw);
+    const list = parsed?.abslist || parsed?.data?.abslist;
+    if (Array.isArray(list)) {
+      return list
+        .filter((it) => it && String(it.MUSICRID || '').includes('MUSIC_'))
+        .map((it) => ({
+          rid: String(it.MUSICRID).replace(/^MUSIC_/i, ''),
+          song: String(it.SONGNAME || it.NAME || ''),
+          artist: String(it.ARTIST || '').replace(/&/g, ', '),
+          refDur: Number(it.DURATION || 0)
+        }));
+    }
+  } catch (_) {}
+
+  // Fallback for JS-like single-quoted/unquoted abslist objects
+  const items = [];
+  const objMatches = raw.match(/\{[^{}]*(?:'MUSICRID'|"MUSICRID"|MUSICRID\s*:)[^{}]*\}/gi) || [];
+  const readField = (objStr, key) => {
+    const m = objStr.match(new RegExp(`(?:['"]?${key}['"]?)\\s*:\\s*(?:'([^']*)'|"([^"]*)"|([^,}\\s]+))`, 'i'));
+    return m ? (m[1] ?? m[2] ?? m[3] ?? '') : '';
+  };
+  for (const chunk of objMatches) {
+    const ridRaw = readField(chunk, 'MUSICRID');
+    const ridM = String(ridRaw).match(/MUSIC_(\d+)/i);
+    if (!ridM) continue;
+    items.push({
+      rid: ridM[1],
+      song: readField(chunk, 'SONGNAME') || readField(chunk, 'NAME'),
+      artist: String(readField(chunk, 'ARTIST') || '').replace(/&/g, ', '),
+      refDur: Number(readField(chunk, 'DURATION') || 0)
+    });
+  }
+  return items;
+}
+
+function mapKuwoLrcList(lrclist) {
+  if (!Array.isArray(lrclist) || !lrclist.length) return [];
+  const entries = [];
+  for (let i = 0; i < lrclist.length; i++) {
+    const txt = String(lrclist[i]?.lineLyric || '').trim();
+    const tVal = Number(lrclist[i]?.time);
+    if (!Number.isFinite(tVal) || tVal < 0) continue;
+    if (i === 0 && (txt.includes('词：') || txt.includes('曲：') || txt.includes(' - '))) continue;
+    entries.push({ time: tVal, txt });
+  }
+  entries.sort((a, b) => a.time - b.time);
+
+  const lines = [];
+  for (const row of entries) {
+    if (!row.txt) {
+      if (lines.length > 0 && lines[lines.length - 1].endTime == null) {
+        const prev = lines[lines.length - 1];
+        prev.endTime = Math.max(prev.time + 0.35, row.time);
+      }
+      continue;
+    }
+    const split = splitMainAndBacking(row.txt);
+    if (split.main || split.backing) {
+      lines.push({
+        time: row.time,
+        endTime: undefined,
+        mainText: split.main,
+        backingText: split.backing,
+        backingIsSuffix: split.backingIsSuffix,
+        words: []
+      });
+    }
+  }
+  return lines;
+}
+
 async function fetchKuwoForCandidate(cand, { title, resolvedTitle, resolvedArtist, duration }) {
   const kw = cand.artist ? `${cand.track} ${cand.artist}` : cand.track;
   if (!kw) return [];
   const body = await fetchText(`https://search.kuwo.cn/r.s?all=${encodeURIComponent(kw)}&ft=music&pn=0&rn=4&rformat=json&encoding=utf8`, 2800, { 'User-Agent': 'Mozilla/5.0' });
   if (!body) return [];
-  const chunks = body.split("{'").filter((c) => c.includes('MUSIC_'));
-  const items = [];
-  for (const ch of chunks) {
-    const ridM = ch.match(/MUSIC_(\d+)/);
-    if (!ridM) continue;
-    const song = (ch.match(/'SONGNAME':'([^']*)'/) || [])[1] || resolvedTitle;
-    const artist = ((ch.match(/'ARTIST':'([^']*)'/) || [])[1] || resolvedArtist).replace(/&/g, ', ');
-    const refDur = Number((ch.match(/'DURATION':'(\d+)'/) || [])[1] || 0) || duration;
-    const pre = scoreCandidate({ trackName: song, artistName: artist, rawInputTitle: title, expectedTitle: resolvedTitle, expectedArtist: resolvedArtist, refDuration, targetDuration: duration, hasSynced: true, hasWordTimings: false });
-    items.push({ rid: ridM[1], song, artist, refDur, pre });
-  }
+  const rawItems = parseKuwoSearchResponse(body);
+  const items = rawItems.map((it) => {
+    const song = it.song || resolvedTitle;
+    const artist = it.artist || resolvedArtist;
+    const refDur = it.refDur || duration;
+    const pre = scoreCandidate({ trackName: song, artistName: artist, rawInputTitle: title, expectedTitle: resolvedTitle, expectedArtist: resolvedArtist, refDuration: refDur, targetDuration: duration, hasSynced: true, hasWordTimings: false });
+    return { rid: it.rid, song, artist, refDur, pre };
+  });
   items.sort((a, b) => b.pre - a.pre);
   const out = [];
   for (const item of items.slice(0, 2)) {
     const payload = await fetchJson(`https://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId=${item.rid}`, 2600, { 'User-Agent': 'Mozilla/5.0' });
     const lrclist = payload?.data?.lrclist || [];
-    if (!lrclist.length) continue;
-    const lrcLines = [];
-    for (let i = 0; i < lrclist.length; i++) {
-      const txt = String(lrclist[i]?.lineLyric || '').trim();
-      const tVal = Number(lrclist[i]?.time);
-      if (!txt || !Number.isFinite(tVal) || tVal < 0) continue;
-      if (i === 0 && (txt.includes('词：') || txt.includes('曲：') || txt.includes(' - '))) continue;
-      const mins = Math.floor(tVal / 60);
-      const secs = (tVal - mins * 60).toFixed(3).padStart(6, '0');
-      lrcLines.push(`[${String(mins).padStart(2, '0')}:${secs}]${txt}`);
-    }
-    const parsed = parseLRC(lrcLines.join('\n'));
+    const parsed = mapKuwoLrcList(lrclist);
     if (!parsed.length) continue;
     const sc = scoreCandidate({ trackName: item.song, artistName: item.artist, rawInputTitle: title, expectedTitle: resolvedTitle, expectedArtist: resolvedArtist, refDuration: item.refDur, targetDuration: duration, hasSynced: true, hasWordTimings: false, parsedLines: parsed });
     out.push({ lines: parsed, sourceName: 'Kuwo LRC', isEstimated: false, hasWordTimings: false, referenceDuration: item.refDur, matchScore: sc });
@@ -654,7 +824,8 @@ function computeLineProgress(line, elapsed, nextLineTime, wordSpeedScale = 1.0) 
     }
     return 1;
   }
-  const gap = Math.max(0.5, nextLineTime - line.time);
+  const effectiveEnd = (typeof line.endTime === 'number' && Number.isFinite(line.endTime)) ? line.endTime : nextLineTime;
+  const gap = Math.max(0.5, effectiveEnd - line.time);
   const span = Math.min(gap * 0.86, Math.max(0.75, (line.mainText || '').length * 0.078)) / speed;
   return Math.min(1, Math.max(0, (elapsed - line.time) / Math.max(0.35, span)));
 }
@@ -673,6 +844,8 @@ module.exports = {
   splitMainAndBacking,
   parseYRC,
   parseLRC,
+  parseKuwoSearchResponse,
+  mapKuwoLrcList,
   DiskLyricsCache,
   fetchLyrics,
   computeLineProgress

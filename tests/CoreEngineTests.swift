@@ -438,6 +438,17 @@ enum CoreEngineTests {
         let syncEngine = VocalAutoSyncEngine()
         syncEngine.syncMode = .strictCrowded
         check(syncEngine.syncMode == .strictCrowded, "VocalAutoSyncEngine exposes syncMode configuration")
+        syncEngine.resetForNewTrack()
+        let unsortedLyrics = [
+            LyricLine(time: 20.0, mainText: "Later", backingText: nil),
+            LyricLine(time: 5.0, mainText: "Earlier", backingText: nil)
+        ]
+        syncEngine.recordAndAlign(mediaElapsed: 5.5, lyrics: unsortedLyrics, isEstimated: false)
+        check(
+            syncEngine.currentNormalizedEnergy() >= 0 && syncEngine.currentNormalizedEnergy() <= 1 &&
+            syncEngine.currentNormalizedBackingEnergy() >= 0 && syncEngine.currentNormalizedBackingEnergy() <= 1,
+            "VocalAutoSyncEngine resets lock-free state and handles unsorted lyrics safely"
+        )
 
         // v2.3: Multi-language i18n parity & English default check across all AppLanguage cases
         let savedLangRaw = UserDefaults.standard.string(forKey: "appLanguage")
