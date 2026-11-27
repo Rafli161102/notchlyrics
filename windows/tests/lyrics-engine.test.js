@@ -17,8 +17,12 @@ const {
   romanizeKoreanHangul,
   isRTLScript,
   DiskLyricsCache,
+  buildTrackCacheKeys,
+  clearTrackCache,
   fetchLyrics,
-  computeLineProgress
+  findActiveLineIndex,
+  computeLineProgress,
+  computeFrameState
 } = require('../lyrics-engine');
 
 let failures = 0;
@@ -176,6 +180,43 @@ check(
   kuwoMapped[1].time === 22.0,
   'mapKuwoLrcList maps structured Kuwo rows & instrumental breaks directly'
 );
+
+// Binary search / incremental cursor line lookup
+const timedLines = [
+  { time: 5.0, mainText: 'Line one' },
+  { time: 10.0, mainText: 'Line two' },
+  { time: 15.0, mainText: 'Line three' },
+  { time: 20.0, mainText: 'Line four' }
+];
+check(findActiveLineIndex(timedLines, 2.0, -1) === -1, 'findActiveLineIndex returns -1 before first lyric');
+check(findActiveLineIndex(timedLines, 11.2, 0) === 1, 'findActiveLineIndex advances cleanly from sequential hint');
+check(findActiveLineIndex(timedLines, 11.5, 1) === 1, 'findActiveLineIndex keeps O(1) cursor within active line');
+check(findActiveLineIndex(timedLines, 21.0, 0) === 3, 'findActiveLineIndex binary searches forward seek');
+check(findActiveLineIndex(timedLines, 5.5, 3) === 0, 'findActiveLineIndex binary searches backward seek');
+
+// Manual offset affects computeFrameState elapsed calculation
+const baseSnap = {
+  isPlaying: false,
+  duration: 60,
+  trackTitle: 'Offset Track',
+  manualOffsetSeconds: 0,
+  lines: timedLines
+};
+check(computeFrameState(baseSnap, 9.7, -1).mainText === 'Line one', 'computeFrameState with 0.0s offset shows Line one at 9.7s');
+check(computeFrameState({ ...baseSnap, manualOffsetSeconds: 0.5 }, 9.7, -1).mainText === 'Line two', 'computeFrameState with +0.5s offset advances into Line two at 9.7s');
+check(computeFrameState({ ...baseSnap, manualOffsetSeconds: -0.5 }, 10.2, -1).mainText === 'Line one', 'computeFrameState with -0.5s offset delays transition at 10.2s');
+
+// Per-track cache clear without deleting other cached songs
+const tmpCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'notchlyrics-clear-test-'));
+const dc = new DiskLyricsCache(tmpCacheDir);
+const keysA = buildTrackCacheKeys('Song Alpha', 'Artist A', 200);
+const keysB = buildTrackCacheKeys('Song Beta', 'Artist B', 180);
+dc.save({ lines: lrc, sourceName: 'LRCLIB', referenceDuration: 200 }, keysA.cacheKey, keysA.fuzzyKey);
+dc.save({ lines: lrc, sourceName: 'LRCLIB', referenceDuration: 180 }, keysB.cacheKey, keysB.fuzzyKey);
+const didClear = clearTrackCache({ title: 'Song Alpha', artist: 'Artist A', duration: 200, cacheDir: tmpCacheDir });
+check(didClear === true && dc.load(keysA.cacheKey, keysA.fuzzyKey, 200) === null, 'clearTrackCache removes target song cache');
+check(dc.load(keysB.cacheKey, keysB.fuzzyKey, 180) !== null, 'clearTrackCache preserves other cached tracks');
+fs.rmSync(tmpCacheDir, { recursive: true, force: true });
 
 if (failures > 0) {
   console.error(`${failures} failing Windows engine test(s)`);

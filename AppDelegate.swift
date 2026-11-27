@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
     private var activeRawLyrics: [LyricLine] = []
     private var activeRomanizedLyrics: [LyricLine] = []
     private var activeLyrics: [LyricLine] = []
+    private var cachedActiveLineIndex: Int? = nil
     private var lyricsSourceName = ""
     private var isEstimatedLyrics = false
     private var hasExactWordTimings = false
@@ -757,6 +758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
 
     private func applyLyricsPreference() {
         activeLyrics = romanizeEnabled ? activeRomanizedLyrics : activeRawLyrics
+        cachedActiveLineIndex = nil
     }
 
     // MARK: - Artwork Color Palette
@@ -861,7 +863,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         var backProg: CGFloat = 1.0
 
         if !activeLyrics.isEmpty {
-            if let idx = activeLyrics.lastIndex(where: { $0.time <= elapsed }) {
+            let foundIdx = LyricLine.activeLineIndex(in: activeLyrics, at: elapsed, hintIndex: cachedActiveLineIndex)
+            cachedActiveLineIndex = foundIdx
+            if let idx = foundIdx {
                 let cur = activeLyrics[idx]
                 mainText = cur.mainText
                 if isEstimatedLyrics && !mainText.isEmpty {
@@ -1052,17 +1056,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         refreshLyricsItem.isEnabled = !currentState.title.isEmpty
         mainMenu.addItem(refreshLyricsItem)
 
+        let curOffset = ThemeStore.shared.activeTheme.karaokeOffsetSeconds
+        let curOffsetLabel = String(format: "%+.2fs", curOffset)
+        let offsetMenu = NSMenu()
         for (keyId, hundredths, key) in [
+            ("menu.nudgeAhead50", 50, ""),
             ("menu.nudgeAhead25", 25, "]"),
+            ("menu.nudgeAhead10", 10, ""),
             ("menu.nudgeAhead05", 5, ""),
             ("menu.nudgeBack05", -5, ""),
-            ("menu.nudgeBack25", -25, "[")
+            ("menu.nudgeBack10", -10, ""),
+            ("menu.nudgeBack25", -25, "["),
+            ("menu.nudgeBack50", -50, "")
         ] {
             let item = NSMenuItem(title: L10n.tr(keyId), action: #selector(nudgeLyricsStep(_:)), keyEquivalent: key)
             item.target = self
             item.tag = hundredths
-            mainMenu.addItem(item)
+            offsetMenu.addItem(item)
         }
+        offsetMenu.addItem(NSMenuItem.separator())
+        let resetManualItem = NSMenuItem(title: L10n.tr("menu.resetManualOffset"), action: #selector(resetManualKaraokeOffset), keyEquivalent: "")
+        resetManualItem.target = self
+        offsetMenu.addItem(resetManualItem)
+
+        let offsetParent = NSMenuItem(title: L10n.tr("menu.manualOffset", curOffsetLabel), action: nil, keyEquivalent: "")
+        offsetParent.submenu = offsetMenu
+        mainMenu.addItem(offsetParent)
 
         let romanizeItem = NSMenuItem(title: L10n.tr("menu.romanize"), action: #selector(toggleRomanizeLyrics), keyEquivalent: "l")
         romanizeItem.target = self
@@ -1221,6 +1240,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         adjustUserKaraokeOffset(by: Double(sender.tag) / 100.0)
     }
 
+    @objc private func resetManualKaraokeOffset() {
+        var t = ThemeStore.shared.activeTheme
+        if t.karaokeOffsetSeconds != 0 {
+            if t.isBuiltIn {
+                t = ThemeStore.shared.duplicateTheme(t, newName: "\(t.name) Custom")
+            }
+            t.karaokeOffsetSeconds = 0
+            ThemeStore.shared.upsertTheme(t, makeActive: true)
+        }
+        cachedActiveLineIndex = nil
+        refreshDisplay()
+    }
+
     @objc private func selectVocalSyncMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let mode = VocalSyncMode(rawValue: raw) else { return }
@@ -1257,8 +1289,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSTouchBarDelegate, NS
         if t.isBuiltIn {
             t = ThemeStore.shared.duplicateTheme(t, newName: "\(t.name) Custom")
         }
-        t.karaokeOffsetSeconds = max(-2.5, min(2.5, t.karaokeOffsetSeconds + delta))
+        let next = ((t.karaokeOffsetSeconds + delta) * 20.0).rounded() / 20.0
+        t.karaokeOffsetSeconds = max(-2.5, min(2.5, next))
         ThemeStore.shared.upsertTheme(t, makeActive: true)
+        cachedActiveLineIndex = nil
         refreshDisplay()
     }
 

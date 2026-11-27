@@ -66,6 +66,62 @@ const TRANSLATIONS = {
     'zh-Hans': '非拉丁歌词罗马音注音',
     es: 'Romanizar Letras No Latinas'
   },
+  refetchLyrics: {
+    en: 'Refetch Lyrics (Clear Cache)',
+    id: 'Muat Ulang Lirik (Hapus Cache)',
+    ja: '歌詞を再取得 (キャッシュ削除)',
+    ko: '가사 다시 불러오기 (캐시 삭제)',
+    'zh-Hans': '重新获取歌词 (清除缓存)',
+    es: 'Volver a Buscar Letra (Limpiar Caché)'
+  },
+  manualOffsetMenu: {
+    en: 'Manual Lyrics Offset',
+    id: 'Offset Lirik Manual',
+    ja: '手動歌詞オフセット',
+    ko: '수동 가사 오프셋',
+    'zh-Hans': '手动歌词时间偏移',
+    es: 'Ajuste Manual de Letra'
+  },
+  offsetAhead50: {
+    en: 'Advance (+0.5s)',
+    id: 'Majukan (+0.5s)',
+    ja: '早める (+0.5s)',
+    ko: '빠르게 (+0.5s)',
+    'zh-Hans': '提前 (+0.5s)',
+    es: 'Adelantar (+0.5s)'
+  },
+  offsetAhead10: {
+    en: 'Fine Advance (+0.1s)',
+    id: 'Majukan Halus (+0.1s)',
+    ja: '微調整で早める (+0.1s)',
+    ko: '미세 빠르게 (+0.1s)',
+    'zh-Hans': '微调提前 (+0.1s)',
+    es: 'Adelanto Fino (+0.1s)'
+  },
+  offsetBack10: {
+    en: 'Fine Delay (-0.1s)',
+    id: 'Mundurkan Halus (-0.1s)',
+    ja: '微調整で遅らせる (-0.1s)',
+    ko: '미세 느리게 (-0.1s)',
+    'zh-Hans': '微调延后 (-0.1s)',
+    es: 'Retraso Fino (-0.1s)'
+  },
+  offsetBack50: {
+    en: 'Delay (-0.5s)',
+    id: 'Mundurkan (-0.5s)',
+    ja: '遅らせる (-0.5s)',
+    ko: '느리게 (-0.5s)',
+    'zh-Hans': '延后 (-0.5s)',
+    es: 'Retrasar (-0.5s)'
+  },
+  offsetReset: {
+    en: 'Reset Offset (0.0s)',
+    id: 'Reset Offset (0.0s)',
+    ja: 'オフセットをリセット (0.0s)',
+    ko: '오프셋 초기화 (0.0s)',
+    'zh-Hans': '重置偏移 (0.0s)',
+    es: 'Restablecer Ajuste (0.0s)'
+  },
   languageMenu: {
     en: 'Settings Language',
     id: 'Bahasa Pengaturan',

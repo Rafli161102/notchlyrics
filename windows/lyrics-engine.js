@@ -3,6 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const {
+  findActiveLineIndex,
+  computeLineProgress,
+  computeFrameState
+} = require('./renderer/lyrics-timing');
 
 function normalizeDashSeparators(text) {
   return String(text || '').replace(/\s+[\u2013\u2014\u2015~]\s+/g, ' - ');
@@ -512,6 +517,35 @@ class DiskLyricsCache {
       }
     } catch (_) {}
   }
+
+  remove(cacheKey, fuzzyKey) {
+    let removed = false;
+    for (const key of [cacheKey, fuzzyKey]) {
+      if (!key) continue;
+      try {
+        const p = this._pathFor(key);
+        if (fs.existsSync(p)) {
+          fs.unlinkSync(p);
+          removed = true;
+        }
+      } catch (_) {}
+    }
+    return removed;
+  }
+}
+
+function buildTrackCacheKeys(title, artist, duration = 0) {
+  const cacheKey = `${String(title || '').toLowerCase()}|${String(artist || '').toLowerCase()}|${Math.round(Number(duration) || 0)}`;
+  const resolved = resolveExpectedTitleArtist(title, artist);
+  const fuzzyKey = `${resolved.title.toLowerCase()}|${resolved.artist.toLowerCase()}`;
+  return { cacheKey, fuzzyKey, resolved };
+}
+
+function clearTrackCache({ title, artist = '', duration = 0, cacheDir }) {
+  if (!cacheDir || !title) return false;
+  const { cacheKey, fuzzyKey } = buildTrackCacheKeys(title, artist, duration);
+  const diskCache = new DiskLyricsCache(cacheDir);
+  return diskCache.remove(cacheKey, fuzzyKey);
 }
 
 async function fetchText(url, timeoutMs = 2800, headers = {}) {
@@ -641,14 +675,16 @@ async function fetchKuwoForCandidate(cand, { title, resolvedTitle, resolvedArtis
   return out;
 }
 
-async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }) {
-  const cacheKey = `${String(title).toLowerCase()}|${String(artist).toLowerCase()}|${Math.round(duration || 0)}`;
-  const resolved = resolveExpectedTitleArtist(title, artist);
-  const fuzzyKey = `${resolved.title.toLowerCase()}|${resolved.artist.toLowerCase()}`;
+async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir, forceRefresh = false }) {
+  const { cacheKey, fuzzyKey, resolved } = buildTrackCacheKeys(title, artist, duration);
   const diskCache = cacheDir ? new DiskLyricsCache(cacheDir) : null;
   if (diskCache) {
-    const hit = diskCache.load(cacheKey, fuzzyKey, duration);
-    if (hit) return hit;
+    if (forceRefresh) {
+      diskCache.remove(cacheKey, fuzzyKey);
+    } else {
+      const hit = diskCache.load(cacheKey, fuzzyKey, duration);
+      if (hit) return hit;
+    }
   }
 
   const candidates = buildQueryCandidates(title, artist);
@@ -802,34 +838,6 @@ async function fetchLyrics({ title, artist, album = '', duration = 0, cacheDir }
   return picked;
 }
 
-function computeLineProgress(line, elapsed, nextLineTime, wordSpeedScale = 1.0) {
-  if (!line) return 1;
-  const speed = Math.min(2.2, Math.max(0.4, Number(wordSpeedScale) || 1.0));
-  if (line.words && line.words.length) {
-    const totalChars = Math.max(1, line.words.reduce((acc, w) => acc + w.text.length, 0));
-    const effElapsed = line.time + (elapsed - line.time) * speed;
-    let before = 0;
-    for (let i = 0; i < line.words.length; i++) {
-      const w = line.words[i];
-      const end = w.time + Math.max(0.07, w.duration);
-      if (effElapsed < w.time) return before / totalChars;
-      if (effElapsed <= end) {
-        const frac = (effElapsed - w.time) / Math.max(0.07, w.duration);
-        return Math.min(1, Math.max(0, (before + frac * w.text.length) / totalChars));
-      }
-      if (i + 1 < line.words.length && effElapsed < line.words[i + 1].time) {
-        return (before + w.text.length) / totalChars;
-      }
-      before += w.text.length;
-    }
-    return 1;
-  }
-  const effectiveEnd = (typeof line.endTime === 'number' && Number.isFinite(line.endTime)) ? line.endTime : nextLineTime;
-  const gap = Math.max(0.5, effectiveEnd - line.time);
-  const span = Math.min(gap * 0.86, Math.max(0.75, (line.mainText || '').length * 0.078)) / speed;
-  return Math.min(1, Math.max(0, (elapsed - line.time) / Math.max(0.35, span)));
-}
-
 module.exports = {
   normalizeDashSeparators,
   cleanTitle,
@@ -847,6 +855,10 @@ module.exports = {
   parseKuwoSearchResponse,
   mapKuwoLrcList,
   DiskLyricsCache,
+  buildTrackCacheKeys,
+  clearTrackCache,
   fetchLyrics,
-  computeLineProgress
+  findActiveLineIndex,
+  computeLineProgress,
+  computeFrameState
 };

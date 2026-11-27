@@ -43,6 +43,35 @@ struct LyricLine: Codable, Equatable {
         !mainText.isEmpty || !(backingText ?? "").isEmpty
     }
 
+    /// Returns the greatest index in sorted `lines` with `line.time <= elapsed`, or nil.
+    /// Uses O(1) hint-cursor verification before falling back to binary search.
+    static func activeLineIndex(in lines: [LyricLine], at elapsed: TimeInterval, hintIndex: Int? = nil) -> Int? {
+        guard !lines.isEmpty, elapsed >= lines[0].time else { return nil }
+
+        if let hint = hintIndex, hint >= 0, hint < lines.count, lines[hint].time <= elapsed {
+            if hint + 1 >= lines.count || lines[hint + 1].time > elapsed {
+                return hint
+            }
+            if lines[hint + 1].time <= elapsed && (hint + 2 >= lines.count || lines[hint + 2].time > elapsed) {
+                return hint + 1
+            }
+        }
+
+        var low = 0
+        var high = lines.count - 1
+        var found: Int?
+        while low <= high {
+            let mid = (low + high) >> 1
+            if lines[mid].time <= elapsed {
+                found = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return found
+    }
+
     /// Computes exact per-character sweep progress [0, 1] at `elapsed` for the main vocal,
     /// scaled smoothly by `wordSpeedScale` (0.50x .. 2.00x) for accurate karaoke pacing.
     func singingProgress(at elapsed: TimeInterval, nextLineTime: TimeInterval, wordSpeedScale: Double = 1.0) -> CGFloat {
@@ -274,8 +303,7 @@ final class DiskLyricsCache {
     }
 
     func remove(cacheKey: String, fuzzyKey: String) {
-        ioQueue.async { [weak self] in
-            guard let self = self else { return }
+        ioQueue.sync {
             try? FileManager.default.removeItem(at: self.fileURL(forKey: cacheKey))
             if !fuzzyKey.isEmpty {
                 try? FileManager.default.removeItem(at: self.fileURL(forKey: fuzzyKey))

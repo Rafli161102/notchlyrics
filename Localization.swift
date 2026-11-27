@@ -440,12 +440,24 @@ enum L10n {
             .korean: "보컬 자동 동기화 오프셋 초기화", .chineseSimplified: "重置人声自动同步偏移", .spanish: "Restablecer Compensación Auto-Sync"
         ],
         "menu.refreshLyrics": [
-            .english: "Refresh Lyrics Online (Bypass Cache)", .indonesian: "Cari Ulang Lirik Online (Lewati Cache)", .japanese: "オンラインで歌詞を再検索 (キャッシュ無視)",
-            .korean: "온라인 가사 다시 찾기 (캐시 무시)", .chineseSimplified: "在线重新搜索歌词 (跳过缓存)", .spanish: "Buscar Letra en Línea (Sin Caché)"
+            .english: "Refetch Lyrics (Clear Cache)", .indonesian: "Muat Ulang Lirik (Hapus Cache)", .japanese: "歌詞を再取得 (キャッシュ削除)",
+            .korean: "가사 다시 불러오기 (캐시 삭제)", .chineseSimplified: "重新获取歌词 (清除缓存)", .spanish: "Volver a Buscar Letra (Limpiar Caché)"
+        ],
+        "menu.manualOffset": [
+            .english: "Manual Lyrics Offset: %@", .indonesian: "Offset Lirik Manual: %@", .japanese: "手動歌詞オフセット: %@",
+            .korean: "수동 가사 오프셋: %@", .chineseSimplified: "手动歌词偏移: %@", .spanish: "Ajuste Manual: %@"
+        ],
+        "menu.nudgeAhead50": [
+            .english: "Advance Lyrics (+0.5s)", .indonesian: "Majukan Lirik (+0.5s)", .japanese: "歌詞を早める (+0.5s)",
+            .korean: "가사 빠르게 (+0.5s)", .chineseSimplified: "歌词提前 (+0.5s)", .spanish: "Adelantar (+0.5s)"
         ],
         "menu.nudgeAhead25": [
             .english: "Advance Lyrics Timing (+0.25s)", .indonesian: "Majukan Timing Lirik (+0.25s)", .japanese: "歌詞タイミングを早める (+0.25s)",
             .korean: "가사 타이밍 빠르게 (+0.25s)", .chineseSimplified: "歌词提前 (+0.25s)", .spanish: "Adelantar Letra (+0.25s)"
+        ],
+        "menu.nudgeAhead10": [
+            .english: "Step Advance (+0.1s)", .indonesian: "Majukan (+0.1s)", .japanese: "少し早める (+0.1s)",
+            .korean: "조금 빠르게 (+0.1s)", .chineseSimplified: "微调提前 (+0.1s)", .spanish: "Adelanto (+0.1s)"
         ],
         "menu.nudgeAhead05": [
             .english: "Fine Advance (+0.05s)", .indonesian: "Majukan Halus (+0.05s)", .japanese: "微調整で早める (+0.05s)",
@@ -455,9 +467,21 @@ enum L10n {
             .english: "Fine Delay (-0.05s)", .indonesian: "Mundurkan Halus (-0.05s)", .japanese: "微調整で遅らせる (-0.05s)",
             .korean: "미세 느리게 (-0.05s)", .chineseSimplified: "微调延后 (-0.05s)", .spanish: "Retraso Fino (-0.05s)"
         ],
+        "menu.nudgeBack10": [
+            .english: "Step Delay (-0.1s)", .indonesian: "Mundurkan (-0.1s)", .japanese: "少し遅らせる (-0.1s)",
+            .korean: "조금 느리게 (-0.1s)", .chineseSimplified: "微调延后 (-0.1s)", .spanish: "Retraso (-0.1s)"
+        ],
         "menu.nudgeBack25": [
             .english: "Delay Lyrics Timing (-0.25s)", .indonesian: "Mundurkan Timing Lirik (-0.25s)", .japanese: "歌詞タイミングを遅らせる (-0.25s)",
             .korean: "가사 타이밍 느리게 (-0.25s)", .chineseSimplified: "歌词延后 (-0.25s)", .spanish: "Retrasar Letra (-0.25s)"
+        ],
+        "menu.nudgeBack50": [
+            .english: "Delay Lyrics (-0.5s)", .indonesian: "Mundurkan Lirik (-0.5s)", .japanese: "歌詞を遅らせる (-0.5s)",
+            .korean: "가사 느리게 (-0.5s)", .chineseSimplified: "歌词延后 (-0.5s)", .spanish: "Retrasar (-0.5s)"
+        ],
+        "menu.resetManualOffset": [
+            .english: "Reset Manual Offset (0.0s)", .indonesian: "Reset Offset Manual (0.0s)", .japanese: "手動オフセットをリセット (0.0s)",
+            .korean: "수동 오프셋 초기화 (0.0s)", .chineseSimplified: "重置手动偏移 (0.0s)", .spanish: "Restablecer Ajuste (0.0s)"
         ],
         "menu.romanize": [
             .english: "Romanize Lyrics (Romaji/Pinyin)", .indonesian: "Romanisasi Lirik (Romaji/Pinyin)", .japanese: "歌詞をローマ字化 (Romaji/Pinyin)",

@@ -10,24 +10,26 @@ jobs:
   macos-build-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run Swift Notch & Core Engine tests
         run: ./tests/run.sh
       - name: Build Universal macOS app bundle & archive
         run: ./build.sh --universal --package
       - name: Upload macOS build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: TouchBarLyrics-macOS-Universal
           path: .build/*.zip
+          include-hidden-files: true
+          if-no-files-found: ignore
 
   windows-engine-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Run Windows Lyrics Engine unit tests
         run: |
           cd windows
@@ -37,10 +39,10 @@ jobs:
     runs-on: windows-latest
     needs: windows-engine-tests
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Install Windows desktop dependencies & package x64/ARM64 targets
         run: |
           cd windows
@@ -94,7 +96,7 @@ jobs:
           }
           $exes | Select-Object Name, Length
       - name: Upload Windows installer & portable artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: NotchLyrics-Windows-x64-arm64
           path: windows/dist/*.exe

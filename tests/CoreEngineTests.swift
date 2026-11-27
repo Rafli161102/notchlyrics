@@ -584,6 +584,33 @@ enum CoreEngineTests {
             check(bgView.renderedMainAttributedString.length > 0, "ThemeWordAnimation.\(wAnim.rawValue) renders attributed string")
         }
 
+        // Binary search + incremental cursor lookup & deterministic per-track cache clear
+        let searchLines = [
+            LyricLine(time: 5.0, mainText: "One", backingText: nil),
+            LyricLine(time: 10.0, mainText: "Two", backingText: nil),
+            LyricLine(time: 15.0, mainText: "Three", backingText: nil),
+            LyricLine(time: 20.0, mainText: "Four", backingText: nil)
+        ]
+        check(LyricLine.activeLineIndex(in: searchLines, at: 2.0, hintIndex: nil) == nil, "LyricLine.activeLineIndex returns nil before first line")
+        check(LyricLine.activeLineIndex(in: searchLines, at: 10.5, hintIndex: 0) == 1, "LyricLine.activeLineIndex advances via hint cursor")
+        check(LyricLine.activeLineIndex(in: searchLines, at: 21.0, hintIndex: 0) == 3, "LyricLine.activeLineIndex binary searches forward seek")
+        check(LyricLine.activeLineIndex(in: searchLines, at: 5.2, hintIndex: 3) == 0, "LyricLine.activeLineIndex binary searches backward seek")
+
+        let manualOffset: TimeInterval = 0.5
+        check(LyricLine.activeLineIndex(in: searchLines, at: 9.6 + manualOffset) == 1, "manual offset (+0.5s) shifts active line lookup cleanly")
+
+        let clearDir = (NSTemporaryDirectory() as NSString).appendingPathComponent("tbl_clear_\(UUID().uuidString)")
+        let clearDisk = DiskLyricsCache(directory: clearDir)
+        let testFetcher = LyricsParserAndFetcher(diskCache: clearDisk)
+        let keepRes = FetchedLyricsResult(lines: searchLines, sourceName: "LRCLIB", isEstimated: false, hasWordTimings: false, referenceDuration: 180)
+        clearDisk.save(sampleRes, cacheKey: "track-a|artist-a|210", fuzzyKey: "track-a|artist-a")
+        clearDisk.save(keepRes, cacheKey: "track-b|artist-b|180", fuzzyKey: "track-b|artist-b")
+        Thread.sleep(forTimeInterval: 0.12)
+        testFetcher.clearCacheEntry(forKey: "track-a|artist-a|210", rawTitle: "track-a", rawArtist: "artist-a")
+        check(clearDisk.load(cacheKey: "track-a|artist-a|210", fuzzyKey: "track-a|artist-a", targetDuration: 210) == nil, "clearCacheEntry removes target track from disk cache deterministically")
+        check(clearDisk.load(cacheKey: "track-b|artist-b|180", fuzzyKey: "track-b|artist-b", targetDuration: 180) != nil, "clearCacheEntry preserves other cached tracks")
+        try? FileManager.default.removeItem(atPath: clearDir)
+
         if failures > 0 {
             print("\(failures) failing core test(s)")
             exit(1)

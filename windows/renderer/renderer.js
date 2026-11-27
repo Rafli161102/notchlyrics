@@ -56,25 +56,113 @@
 
   let latestArtwork = '';
   let resolvedAccent = '#f4d06f';
+  let latestSnapshot = null;
+  let syncedAtPerfMs = performance.now();
+  let cursorIdx = -1;
+  let rafId = null;
+  let lastRenderSig = '';
+  let windowShown = true;
+
+  function computeLiveElapsed(snapshot) {
+    const base = Math.max(0, Number(snapshot?.baseElapsed) || 0);
+    if (!snapshot?.isPlaying) return base;
+    const dt = Math.max(0, (performance.now() - syncedAtPerfMs) / 1000);
+    const raw = base + dt;
+    const dur = Number(snapshot?.duration) || 0;
+    return dur > 0 ? Math.min(dur, raw) : raw;
+  }
+
+  function renderCurrentFrame(force = false) {
+    if (!latestSnapshot || !window.NotchLyrics || !window.NotchLyricsTiming) return;
+    const rawElapsed = computeLiveElapsed(latestSnapshot);
+    const frame = window.NotchLyricsTiming.computeFrameState(latestSnapshot, rawElapsed, cursorIdx);
+    cursorIdx = frame.lineIndex;
+
+    const sig = `${latestSnapshot.style}|${latestSnapshot.isPlaying}|${latestSnapshot.trackTitle}|${frame.lineIndex}|${frame.mainText}|${Math.round(frame.lineProgress * 180)}|${Math.round(frame.songProgress * 1000)}|${Math.floor(frame.elapsedTime)}|${resolvedAccent}`;
+    if (!force && sig === lastRenderSig) return;
+    lastRenderSig = sig;
+
+    window.NotchLyrics.update({
+      style: latestSnapshot.style,
+      mainText: frame.mainText,
+      backingText: frame.backingText,
+      trackTitle: latestSnapshot.trackTitle,
+      artist: latestSnapshot.artist,
+      album: latestSnapshot.album,
+      artworkUrl: latestSnapshot.artworkUrl,
+      isPlaying: latestSnapshot.isPlaying,
+      songProgress: frame.songProgress,
+      lineProgress: frame.lineProgress,
+      elapsedTime: frame.elapsedTime,
+      duration: latestSnapshot.duration,
+      accentColor: resolvedAccent
+    });
+  }
+
+  function shouldAnimate() {
+    if (!latestSnapshot || !latestSnapshot.isPlaying) return false;
+    if (document.hidden || !windowShown) return false;
+    const hasLyrics = Array.isArray(latestSnapshot.lines) && latestSnapshot.lines.length > 0;
+    const hasDuration = Number(latestSnapshot.duration) > 0;
+    return hasLyrics || hasDuration;
+  }
+
+  function stopRafLoop() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
+  function stepRaf() {
+    rafId = null;
+    if (!shouldAnimate()) return;
+    renderCurrentFrame(false);
+    rafId = requestAnimationFrame(stepRaf);
+  }
+
+  function syncRafLoop() {
+    if (shouldAnimate()) {
+      if (rafId === null) {
+        rafId = requestAnimationFrame(stepRaf);
+      }
+    } else {
+      stopRafLoop();
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && latestSnapshot) {
+      renderCurrentFrame(true);
+    }
+    syncRafLoop();
+  });
 
   if (window.NotchLyrics && window.NotchLyricsDesktop) {
     window.NotchLyrics.onCommand((cmd) => window.NotchLyricsDesktop.sendCommand(cmd));
     window.NotchLyrics.onHoverChange((expanded) => window.NotchLyricsDesktop.setHovered(expanded));
 
-    window.NotchLyricsDesktop.onState((state) => {
-      if (state.artworkUrl && state.artworkUrl !== latestArtwork) {
-        latestArtwork = state.artworkUrl;
-        extractAlbumAccent(state.artworkUrl, (acc) => {
+    window.NotchLyricsDesktop.onState((snapshot) => {
+      if (typeof snapshot.windowVisible === 'boolean') {
+        windowShown = snapshot.windowVisible;
+      }
+      latestSnapshot = snapshot;
+      syncedAtPerfMs = performance.now();
+      cursorIdx = -1;
+
+      if (snapshot.artworkUrl && snapshot.artworkUrl !== latestArtwork) {
+        latestArtwork = snapshot.artworkUrl;
+        extractAlbumAccent(snapshot.artworkUrl, (acc) => {
           resolvedAccent = acc || '#f4d06f';
+          renderCurrentFrame(true);
         });
-      } else if (!state.artworkUrl) {
+      } else if (!snapshot.artworkUrl) {
         latestArtwork = '';
         resolvedAccent = '#f4d06f';
       }
-      window.NotchLyrics.update({
-        ...state,
-        accentColor: resolvedAccent
-      });
+
+      renderCurrentFrame(true);
+      syncRafLoop();
     });
   }
 })();
