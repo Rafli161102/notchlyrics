@@ -320,6 +320,8 @@ enum CoreEngineTests {
         let softView = TouchBarLyricsView {}
         var karaTheme = TouchBarTheme.builtInThemes[0]
         karaTheme.wordAnimation = .karaokeLift
+        // Rendering tests must not inherit the CI machine's accessibility preference.
+        softView.accessibilityReduceMotionOverrideForTesting = false
         softView.applyTheme(karaTheme)
         softView.update(
             trackTitle: "Intonation",
@@ -340,6 +342,7 @@ enum CoreEngineTests {
         let softLift = (softAttr.attribute(.baselineOffset, at: midCharIdx, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0.0
 
         let loudView = TouchBarLyricsView {}
+        loudView.accessibilityReduceMotionOverrideForTesting = false
         loudView.applyTheme(karaTheme)
         for _ in 0..<8 {
             loudView.update(
@@ -360,6 +363,25 @@ enum CoreEngineTests {
         let loudAttr = loudView.renderedMainAttributedString
         let loudLift = (loudAttr.attribute(.baselineOffset, at: midCharIdx, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0.0
         check(loudLift > softLift + 0.6, "high vocal intonation & syllable onset increases karaoke syllable lift (soft=\(softLift) loud=\(loudLift))")
+
+        let reducedMotionView = TouchBarLyricsView {}
+        reducedMotionView.accessibilityReduceMotionOverrideForTesting = true
+        reducedMotionView.applyTheme(karaTheme)
+        reducedMotionView.update(
+            trackTitle: "Reduced Motion",
+            mainText: "Belting high note",
+            backingText: nil,
+            songProgress: 0.4,
+            lineProgress: 0.5,
+            vocalEnergy: 0.95,
+            vocalIntonation: 0.95,
+            vocalOnset: 0.90,
+            isPlaying: true,
+            isVocalSynced: true
+        )
+        let reducedMotionAttr = reducedMotionView.renderedMainAttributedString
+        let reducedMotionLift = (reducedMotionAttr.attribute(.baselineOffset, at: midCharIdx, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0.0
+        check(abs(reducedMotionLift) < 0.001, "Reduce Motion disables active karaoke syllable lift")
 
         let engine = VocalAutoSyncEngine()
         let pace = engine.realtimeDeliveryTempoScale()
