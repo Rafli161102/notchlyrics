@@ -57,7 +57,7 @@
       primaryBtn.removeAttribute('aria-disabled');
       primaryBtn.removeAttribute('tabindex');
       primaryBtn.textContent = info.cta;
-      downloadMeta.textContent = `${info.summary.split('·')[0].trim()} · `NaN` (${releaseTag})`;
+      downloadMeta.textContent = `${info.summary.split('·')[0].trim()} · ${matched.name} (${releaseTag})`;
     } else {
       primaryBtn.removeAttribute('href');
       primaryBtn.setAttribute('aria-disabled', 'true');
