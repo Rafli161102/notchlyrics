@@ -52,11 +52,19 @@
     });
 
     const matched = resolvedAssets.find((asset) => info.matchAsset(asset.name));
-    primaryBtn.href = matched ? matched.browser_download_url : RELEASES_LATEST_URL;
-    primaryBtn.textContent = info.cta;
-    downloadMeta.textContent = matched
-      ? `${info.summary.split('·')[0].trim()} · ${matched.name} (${releaseTag})`
-      : info.summary;
+    if (matched) {
+      primaryBtn.href = matched.browser_download_url;
+      primaryBtn.removeAttribute('aria-disabled');
+      primaryBtn.removeAttribute('tabindex');
+      primaryBtn.textContent = info.cta;
+      downloadMeta.textContent = `${info.summary.split('·')[0].trim()} · `NaN` (${releaseTag})`;
+    } else {
+      primaryBtn.removeAttribute('href');
+      primaryBtn.setAttribute('aria-disabled', 'true');
+      primaryBtn.setAttribute('tabindex', '-1');
+      primaryBtn.textContent = 'Not available yet';
+      downloadMeta.textContent = `No ${selectedOS} package is available in ${releaseTag} yet.`;
+    }
   }
 
   osChips.forEach((chip) => {
@@ -76,9 +84,12 @@
         resolvedAssets = data.assets;
         releaseTag = data.tag_name || releaseTag;
         updateDownloadPanel(selectedOS);
-        releaseStatusText.textContent = `Latest GitHub release ${releaseTag} resolved (${resolvedAssets.length} downloadable assets).`;
+        const hasSelectedAsset = resolvedAssets.some((asset) => PLATFORM_INFO[selectedOS].matchAsset(asset.name));
+        releaseStatusText.textContent = hasSelectedAsset
+          ? `Latest GitHub release ${releaseTag} resolved (${resolvedAssets.length} downloadable assets).`
+          : `Latest release ${releaseTag} does not contain a ${selectedOS} package yet.`;
       } else {
-        releaseStatusText.innerHTML = 'Release assets are hosted on <a href="' + RELEASES_LATEST_URL + '">GitHub Releases</a>.';
+        releaseStatusText.textContent = 'No downloadable assets are available in the latest GitHub release yet.';
       }
     } catch (_) {
       releaseStatusText.innerHTML = 'Direct links point to <a href="' + RELEASES_LATEST_URL + '">GitHub Releases</a>.';
