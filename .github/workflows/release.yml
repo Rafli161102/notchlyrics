@@ -29,6 +29,7 @@ jobs:
         with:
           name: release-windows-exe
           path: windows/dist/*.exe
+          if-no-files-found: error
 
   build-macos:
     runs-on: macos-15
@@ -41,6 +42,7 @@ jobs:
           name: release-macos-zip
           path: .build/*.zip
           include-hidden-files: true
+          if-no-files-found: error
 
   linux-package:
     runs-on: ubuntu-latest
@@ -63,6 +65,7 @@ jobs:
           path: |
             windows/dist/*.AppImage
             windows/dist/*.deb
+          if-no-files-found: error
 
   publish-release:
     runs-on: ubuntu-latest
