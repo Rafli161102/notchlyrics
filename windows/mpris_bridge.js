@@ -353,6 +353,7 @@ function startMprisWatcher({
   let pollTimer = null;
   let latestState = createEmptyPlaybackState();
   let usingFallback = false;
+  let dbusPollInFlight = false;
 
   const emitState = (next) => {
     if (stopped || !next) return;
@@ -399,7 +400,8 @@ function startMprisWatcher({
   };
 
   async function pollDbusOnce(backend) {
-    if (stopped) return;
+    if (stopped || dbusPollInFlight) return;
+    dbusPollInFlight = true;
     try {
       const listArgs = backend === 'gdbus'
         ? ['call', '--session', '--dest', 'org.freedesktop.DBus', '--object-path', '/org/freedesktop/DBus', '--method', 'org.freedesktop.DBus.ListNames']
@@ -432,6 +434,8 @@ function startMprisWatcher({
       emitState(chosen);
     } catch (err) {
       onError(err);
+    } finally {
+      dbusPollInFlight = false;
     }
   }
 

@@ -248,6 +248,39 @@ async function testWatcherFallback() {
     'startMprisWatcher falls back to gdbus polling when playerctl is ENOENT'
   );
 
+  // A slow D-Bus query must not overlap the next interval tick.
+  let activeGetAll = 0;
+  let maxActiveGetAll = 0;
+  const slowExecFile = (cmd, args, _opts, cb) => {
+    if (cmd === 'gdbus' && args[0] === '--version') {
+      cb(null, '2.78.0', '');
+      return;
+    }
+    if (cmd === 'gdbus' && args.includes('org.freedesktop.DBus.ListNames')) {
+      cb(null, "(['org.mpris.MediaPlayer2.spotify'],)", '');
+      return;
+    }
+    if (cmd === 'gdbus' && args.includes('org.freedesktop.DBus.Properties.GetAll')) {
+      activeGetAll++;
+      maxActiveGetAll = Math.max(maxActiveGetAll, activeGetAll);
+      setTimeout(() => {
+        activeGetAll--;
+        cb(null, gdbusSample, '');
+      }, 40);
+      return;
+    }
+    cb(new Error(`Unexpected execFile: ${cmd}`), '', '');
+  };
+  const slowWatcher = startMprisWatcher({
+    onState: () => {},
+    spawnFn: mockSpawn,
+    execFileFn: slowExecFile,
+    pollIntervalMs: 10
+  });
+  await new Promise((r) => setTimeout(r, 145));
+  slowWatcher.stop();
+  check(maxActiveGetAll === 1, 'startMprisWatcher prevents overlapping slow D-Bus polls');
+
   // Also test buildPlaybackSnapshot directly for empty snapshot
   const emptySnap = buildPlaybackSnapshot({ status: 'Playing', title: '', artist: [] });
   check(emptySnap.playing === false && emptySnap.title === '', 'buildPlaybackSnapshot normalizes empty metadata');
