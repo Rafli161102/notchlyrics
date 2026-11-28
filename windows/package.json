@@ -10,8 +10,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node tests/lyrics-engine.test.js && node tests/mpris-bridge.test.js",
-    "dist:win": "electron-builder --win --x64 --arm64",
-    "dist:linux": "electron-builder --linux AppImage deb --x64"
+    "dist:win": "electron-builder --win --x64 --arm64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {},
   "devDependencies": {
