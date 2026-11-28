@@ -65,6 +65,11 @@
       primaryBtn.textContent = 'Not available yet';
       downloadMeta.textContent = `No ${selectedOS} package is available in ${releaseTag} yet.`;
     }
+    if (resolvedAssets.length > 0 && releaseStatusText) {
+      releaseStatusText.textContent = matched
+        ? `Latest GitHub release ${releaseTag} includes a ${selectedOS} package.`
+        : `Latest release ${releaseTag} does not contain a ${selectedOS} package yet.`;
+    }
   }
 
   osChips.forEach((chip) => {
@@ -92,7 +97,12 @@
         releaseStatusText.textContent = 'No downloadable assets are available in the latest GitHub release yet.';
       }
     } catch (_) {
-      releaseStatusText.innerHTML = 'Direct links point to <a href="' + RELEASES_LATEST_URL + '">GitHub Releases</a>.';
+      primaryBtn.href = RELEASES_LATEST_URL;
+      primaryBtn.removeAttribute('aria-disabled');
+      primaryBtn.removeAttribute('tabindex');
+      primaryBtn.textContent = 'Browse GitHub Releases';
+      downloadMeta.textContent = 'Could not verify platform-specific assets. Browse the latest release to check available downloads.';
+      releaseStatusText.textContent = 'GitHub Releases could not be checked right now.';
     }
   }
 
